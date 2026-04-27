@@ -78,7 +78,7 @@ impl ModEngineBuilder {
     }
 
     pub fn build(self, app: AppHandle) -> ModEngine {
-        ModEngine::start(self.mods, self.hook_rx, app)
+        ModEngine::start(self.mods, self.hook_tx, self.hook_rx, app)
     }
 }
 
@@ -90,6 +90,16 @@ impl ModEngineBuilder {
 /// `ModEngineHandle` for dispatching; the PTY read thread clones that handle.
 pub struct ModEngine {
     handle: ModEngineHandle,
+    /// Keeps the hook channel alive for the engine's full lifetime. The
+    /// dispatcher's `select!` arm calls `hook_rx.recv()`, which returns `None`
+    /// when the last sender is dropped. If `start_hook_server()` fails to
+    /// bind 47384, its own clone gets dropped — and without this keepalive
+    /// the channel would close, the select arm would hit `None`, and breaking
+    /// out of that arm would tear down the entire MOD engine (process
+    /// detection, dir tracking, git monitoring, all gone). Holding this clone
+    /// here means `recv()` only returns `None` at app shutdown when the whole
+    /// engine is dropped.
+    _hook_tx_keepalive: mpsc::UnboundedSender<HookPayload>,
 }
 
 impl ModEngine {
@@ -103,7 +113,12 @@ impl ModEngine {
         self.handle.clone()
     }
 
-    fn start(mods: Vec<Box<dyn Mod>>, mut hook_rx: mpsc::UnboundedReceiver<HookPayload>, app: AppHandle) -> Self {
+    fn start(
+        mods: Vec<Box<dyn Mod>>,
+        hook_tx_keepalive: mpsc::UnboundedSender<HookPayload>,
+        mut hook_rx: mpsc::UnboundedReceiver<HookPayload>,
+        app: AppHandle,
+    ) -> Self {
         // Bounded channel for data messages (Output/Input/Resize).
         let (msg_tx, mut msg_rx) = mpsc::channel::<ModMessage>(512);
         // Unbounded channel for lifecycle messages (Open/Close) — never dropped.
@@ -205,9 +220,15 @@ impl ModEngine {
                     // Hook events from the HTTP server. Not tab-scoped at the engine
                     // level — AgentTurnMod resolves the tab internally via session_id /
                     // CWD matching and emits directly via its own AsyncEmitter map.
+                    //
+                    // ModEngine holds a `_hook_tx_keepalive` clone so the channel never
+                    // closes naturally. If `recv()` ever does return `None` we just
+                    // skip — never `break` from the dispatcher, which would kill all
+                    // mod processing (process detection, dir tracking, git, …).
                     hook = hook_rx.recv() => {
-                        let Some(payload) = hook else { break };
-                        for m in &mut mods { m.on_hook_event(&payload); }
+                        if let Some(payload) = hook {
+                            for m in &mut mods { m.on_hook_event(&payload); }
+                        }
                     }
                 }
             }
@@ -220,6 +241,9 @@ impl ModEngine {
             }
         });
 
-        Self { handle: ModEngineHandle { tx: msg_tx, lifecycle_tx } }
+        Self {
+            handle: ModEngineHandle { tx: msg_tx, lifecycle_tx },
+            _hook_tx_keepalive: hook_tx_keepalive,
+        }
     }
 }

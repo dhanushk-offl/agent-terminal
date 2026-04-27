@@ -172,6 +172,12 @@ pub(crate) async fn write_hook_script_to(
 /// it has no business waiting for the HTTP response. `--max-time 5` stays as
 /// a ceiling on background curl lifetime so they don't accumulate as zombies
 /// if the server is hung and hooks fire repeatedly.
+///
+/// Why `127.0.0.1` and not `localhost`: the server binds `127.0.0.1:47384`
+/// (IPv4 only). On macOS, `localhost` resolves to `::1` first, so curl tries
+/// IPv6 and gets ECONNREFUSED before falling back to IPv4 (Happy Eyeballs).
+/// The fallback works, but every hook eats the latency for nothing. Pinning
+/// the script to `127.0.0.1` matches the server's address family directly.
 fn build_hook_script(agent_id: &str) -> String {
     // The sed command removes the leading `{` from the agent's JSON payload so
     // we can inject our own fields at the front. The result is a valid JSON object:
@@ -191,7 +197,7 @@ INPUT=$(cat)\n\
 EVENT=\"$1\"\n\
 STRIPPED=$(printf '%s' \"$INPUT\" | sed 's/^{{//')\n\
 PAYLOAD=\"{{\\\"agent\\\":\\\"{agent_id}\\\",\\\"event\\\":\\\"$EVENT\\\",$STRIPPED\"\n\
-{{ curl -sf --max-time 5 -X POST http://localhost:47384/hook \\\n\
+{{ curl -sf --max-time 5 -X POST http://127.0.0.1:47384/hook \\\n\
     -H 'Content-Type: application/json' \\\n\
     -d \"$PAYLOAD\" \\\n\
     >/dev/null 2>&1 & }} 2>/dev/null\n\
@@ -819,7 +825,9 @@ mod tests {
         write_hook_script_to(claude_config(), &script).await.unwrap();
 
         let content = fs::read_to_string(&script).unwrap();
-        assert!(content.contains("localhost:47384"), "script should be updated");
+        // 127.0.0.1 (not `localhost`) so the script's address family matches
+        // the server's bind. See doc comment on `build_hook_script`.
+        assert!(content.contains("127.0.0.1:47384"), "script should be updated");
         assert!(!content.contains("echo old"), "old content should be replaced");
     }
 }

@@ -277,17 +277,30 @@ impl AgentTurnMod {
 // ─── Transcript reader ────────────────────────────────────────────────────────
 
 /// Reads the last assistant message from a Claude session JSONL transcript.
+///
+/// Iterates lines in reverse and returns the first valid assistant message
+/// found. Lines that fail to parse OR don't match the assistant-message shape
+/// are skipped — we keep scanning earlier lines instead of aborting. Claude's
+/// JSONL transcripts mix entry types (user, assistant, tool_use, system,
+/// summary, etc.), so it's normal for the trailing lines near EOF to be
+/// non-assistant entries. Using `?` on per-line `Option`s here would bail out
+/// on the first such line and miss every assistant message before it.
 async fn read_last_assistant_message(transcript_path: &str) -> Option<String> {
     let content = tokio::fs::read_to_string(transcript_path).await.ok()?;
 
     for line in content.lines().rev() {
-        let entry: serde_json::Value = serde_json::from_str(line).ok()?;
+        let entry: serde_json::Value = match serde_json::from_str(line) {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
 
-        if entry.get("message")?.get("role")?.as_str()? != "assistant" {
+        let Some(message) = entry.get("message") else { continue };
+        let Some(role) = message.get("role").and_then(|r| r.as_str()) else { continue };
+        if role != "assistant" {
             continue;
         }
 
-        let content_val = &entry["message"]["content"];
+        let content_val = &message["content"];
         let text = if let Some(s) = content_val.as_str() {
             s.to_string()
         } else if let Some(arr) = content_val.as_array() {
@@ -312,4 +325,67 @@ async fn read_last_assistant_message(transcript_path: &str) -> Option<String> {
     }
 
     None
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_temp(name: &str, content: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    /// Regression guard for the bug Copilot caught on PR #24:
+    /// `read_last_assistant_message` previously used `?` on per-line `Option`s,
+    /// so the very first non-assistant line near EOF (a tool_use record, a
+    /// summary, or any malformed line) would abort the whole search and return
+    /// `None` — even if earlier valid assistant messages existed.
+    #[tokio::test]
+    async fn transcript_reader_skips_non_assistant_and_malformed_lines() {
+        let pid = std::process::id();
+        let path = write_temp(
+            &format!("agent-terminal-transcript-test-{pid}.jsonl"),
+            // Reverse-chronological reading: line 1 (top) is the OLDEST, line 5 is the NEWEST.
+            // The reader iterates lines.rev() so it sees line 5 first.
+            // - line 5: malformed JSON                    → must not abort
+            // - line 4: valid JSON, no `message` field    → must not abort
+            // - line 3: valid JSON, role != "assistant"   → must not abort
+            // - line 2: valid assistant message           → must be returned
+            // - line 1: earlier assistant (should NOT win — line 2 is more recent)
+            r#"{"message":{"role":"assistant","content":"earlier message"}}
+{"message":{"role":"assistant","content":"the right answer"}}
+{"message":{"role":"user","content":"a user line"}}
+{"type":"summary","payload":42}
+this line is not json at all
+"#,
+        );
+
+        let got = read_last_assistant_message(path.to_str().unwrap()).await;
+        assert_eq!(
+            got.as_deref(),
+            Some("the right answer"),
+            "reader must skip malformed/non-assistant lines and return the most recent assistant message"
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Confirms array-shaped content (Claude's modern format) round-trips too.
+    #[tokio::test]
+    async fn transcript_reader_handles_array_content() {
+        let pid = std::process::id();
+        let path = write_temp(
+            &format!("agent-terminal-transcript-array-{pid}.jsonl"),
+            r#"{"message":{"role":"assistant","content":[{"type":"text","text":"hello world"}]}}
+"#,
+        );
+
+        let got = read_last_assistant_message(path.to_str().unwrap()).await;
+        assert_eq!(got.as_deref(), Some("hello world"));
+        std::fs::remove_file(&path).ok();
+    }
 }
