@@ -17,50 +17,76 @@ type Props = {
   className?: string
 }
 
+// VS Code Dark+ palette, sourced from VS Code's terminal defaults
+// (src/vs/workbench/contrib/terminal/browser/terminalConfiguration.ts, MIT).
+//
+// Deviations from upstream:
+//   - `background` is set to `#0e0f10` (upstream `#1e1e1e`) so the terminal
+//     pane matches the app's --terminal-background CSS variable and blends
+//     with the surrounding chrome.
+//   - `cursorAccent` follows the overridden background. cursorAccent is
+//     drawn behind a block-style cursor and must equal the terminal bg for
+//     the cursor character to invert cleanly; it's a derived value, not an
+//     independent palette choice.
+//
+// Every other slot (foreground, cursor, ANSI 16, selection) is upstream-faithful.
+//
+// `selectionForeground` is the load-bearing addition vs. the previous
+// hand-rolled palette: without it, xterm.js leaves the glyph colour
+// unchanged when a cell is selected, causing the WebGL renderer to
+// re-rasterise glyphs with shifted contrast and producing a visible
+// "font wobble" during selection.
 const DARK_THEME: ITheme = {
-  background: '#0d0d0d',
-  foreground: '#e8e8e8',
-  cursor: '#e8e8e8',
-  selectionBackground: '#3a3a3a',
-  black: '#1a1a1a',
-  red: '#e06c75',
-  green: '#98c379',
-  yellow: '#e5c07b',
-  blue: '#61afef',
-  magenta: '#c678dd',
-  cyan: '#56b6c2',
-  white: '#abb2bf',
-  brightBlack: '#4b5263',
-  brightRed: '#e06c75',
-  brightGreen: '#98c379',
-  brightYellow: '#e5c07b',
-  brightBlue: '#61afef',
-  brightMagenta: '#c678dd',
-  brightCyan: '#56b6c2',
-  brightWhite: '#ffffff',
+  background: '#0e0f10', // matches --terminal-background (dark)
+  foreground: '#cccccc',
+  cursor: '#aeafad',
+  cursorAccent: '#0e0f10',
+  selectionBackground: '#264f78',
+  selectionForeground: '#ffffff',
+  selectionInactiveBackground: '#3a3d41',
+  black: '#000000',
+  red: '#cd3131',
+  green: '#0dbc79',
+  yellow: '#e5e510',
+  blue: '#2472c8',
+  magenta: '#bc3fbc',
+  cyan: '#11a8cd',
+  white: '#e5e5e5',
+  brightBlack: '#666666',
+  brightRed: '#f14c4c',
+  brightGreen: '#23d18b',
+  brightYellow: '#f5f543',
+  brightBlue: '#3b8eea',
+  brightMagenta: '#d670d6',
+  brightCyan: '#29b8db',
+  brightWhite: '#e5e5e5',
 }
 
+// VS Code Light+ palette, same source as Dark+ above.
 const LIGHT_THEME: ITheme = {
-  background: '#fafafa',
-  foreground: '#383a42',
-  cursor: '#526fff',
-  selectionBackground: '#d0d1d3',
-  black: '#383a42',
-  red: '#e45649',
-  green: '#50a14f',
-  yellow: '#c18401',
-  blue: '#4078f2',
-  magenta: '#a626a4',
-  cyan: '#0184bc',
-  white: '#a0a1a7',
-  brightBlack: '#4f525e',
-  brightRed: '#e45649',
-  brightGreen: '#50a14f',
-  brightYellow: '#c18401',
-  brightBlue: '#4078f2',
-  brightMagenta: '#a626a4',
-  brightCyan: '#0184bc',
-  brightWhite: '#383a42',
+  background: '#ffffff', // matches --terminal-background (light)
+  foreground: '#333333',
+  cursor: '#333333',
+  cursorAccent: '#ffffff',
+  selectionBackground: '#add6ff',
+  selectionForeground: '#000000',
+  selectionInactiveBackground: '#e5ebf1',
+  black: '#000000',
+  red: '#cd3131',
+  green: '#00bc00',
+  yellow: '#949800',
+  blue: '#0451a5',
+  magenta: '#bc05bc',
+  cyan: '#0598bc',
+  white: '#555555',
+  brightBlack: '#666666',
+  brightRed: '#cd3131',
+  brightGreen: '#14ce14',
+  brightYellow: '#b5ba00',
+  brightBlue: '#0451a5',
+  brightMagenta: '#bc05bc',
+  brightCyan: '#0598bc',
+  brightWhite: '#a5a5a5',
 }
 
 // Returns true when the key combo is claimed by the app's hotkey layer
