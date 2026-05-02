@@ -4,7 +4,7 @@ import {
   XTermTerminal,
 } from '@/components/XTermTerminal/XTermTerminal'
 import { IPC } from '@/modules/ipc/commands'
-import { onPtyExit } from '@/modules/ipc/events'
+import { onPtyExit, onPtyRespawned } from '@/modules/ipc/events'
 import { makeTabKey } from '@/screens/workspace/workspace.helpers'
 
 // Tracks in-flight openTab calls per tabKey. Prevents concurrent calls
@@ -93,12 +93,27 @@ export const TerminalPane = React.memo(function TerminalPane({
   )
 
   useEffect(() => {
+    // pty:exit only fires when the user closed the tab — the backend now
+    // respawns automatically when the shell self-exits (typed `exit`,
+    // segfault, etc.) and emits pty:respawned instead. So this banner
+    // shouldn't actually show up in normal use; kept as a safety net for
+    // the rate-limit fallback path.
     const unlistenExit = onPtyExit((id) => {
       if (id === tabKey) handleRef.current?.write('\r\n[Process exited]\r\n')
     })
 
+    const unlistenRespawn = onPtyRespawned((id, cwd) => {
+      if (id !== tabKey) return
+      const where = cwd ? ` in ${cwd}` : ''
+      // Dim ANSI so the banner reads as system chrome, not shell output.
+      handleRef.current?.write(
+        `\r\n\x1b[2m[Shell restarted${where}]\x1b[0m\r\n`,
+      )
+    })
+
     return () => {
       unlistenExit.then((fn) => fn())
+      unlistenRespawn.then((fn) => fn())
       // Do NOT close the pty here. Pty lifetime is tied to the tab's
       // existence in the store. removeTab() calls IPC.closeTab() when
       // the user explicitly closes the tab.
