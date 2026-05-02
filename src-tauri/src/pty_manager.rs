@@ -300,6 +300,27 @@ pub fn spawn_pty(
 
     let mut cmd = CommandBuilder::new(&shell_path);
     cmd.env("AGENT_TERMINAL_TAB_ID", &tab_id);
+
+    // Critical for production GUI launches: macOS launchd starts the .app
+    // with a minimal environment (no TERM, no user PATH). Without TERM, zsh
+    // can't initialize zle (its line editor) and the user sees doubled
+    // keystrokes (kernel TTY echo + shell echo, neither suppressed). Without
+    // user PATH, Homebrew/fnm/codex/etc. aren't on PATH and every command
+    // fails with "command not found".
+    //
+    // Setting TERM here matches what every terminal emulator does. PATH and
+    // language vars are loaded by the shell itself once we (a) make it a
+    // login shell so /etc/zprofile + path_helper run, and (b) ensure our
+    // ZDOTDIR shims source the user's real .zshenv/.zprofile (see
+    // shell_integration.rs).
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    if let Ok(lang) = std::env::var("LANG") {
+        cmd.env("LANG", lang);
+    } else {
+        cmd.env("LANG", "en_US.UTF-8");
+    }
+
     if let Some(ref dir) = cwd {
         cmd.cwd(dir);
     }
@@ -312,8 +333,9 @@ pub fn spawn_pty(
         .to_lowercase();
 
     if shell_name == "zsh" {
-        // ZDOTDIR redirect: zsh will load ~/.config/agent-terminal/zsh/.zshrc
-        // instead of ~/.zshrc. Our script then sources the real ~/.zshrc.
+        // ZDOTDIR redirect: zsh loads .zshenv/.zprofile/.zshrc from
+        // ~/.config/agent-terminal/zsh/ instead of $HOME. Our shim files
+        // there source the user's real ones.
         let at_zsh_dir = dirs::home_dir()
             .map(|h| h.join(".config").join("agent-terminal").join("zsh"))
             .and_then(|p| p.to_str().map(|s| s.to_string()));
@@ -325,6 +347,13 @@ pub fn spawn_pty(
             cmd.env("ZDOTDIR", &zdotdir);
             cmd.env("ZDOTDIR_ORIG", &home);
         }
+
+        // -l makes it a login shell so /etc/zprofile (path_helper) runs and
+        // adds /usr/local/bin, /opt/homebrew/bin, /opt/homebrew/sbin to PATH.
+        // Combined with our .zprofile shim sourcing the user's real .zprofile,
+        // this gives the spawned shell the same PATH the user sees in
+        // Terminal.app. Without -l, GUI-launched builds get a stub PATH.
+        cmd.arg("-l");
     } else if shell_name == "bash" {
         // --init-file replaces ~/.bashrc for non-login shells
         let init_file = dirs::home_dir()

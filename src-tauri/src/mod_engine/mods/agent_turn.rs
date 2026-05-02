@@ -22,9 +22,11 @@
 //! reads this field and renders the correct badge/animation.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::hook_server::HookPayload;
 use crate::mod_engine::{AsyncEmitter, Mod, ModContext};
+use crate::notifications::{AgentNotifyState, NotificationService};
 
 // ─── State types ─────────────────────────────────────────────────────────────
 
@@ -44,6 +46,10 @@ pub struct AgentTurnMod {
     tab_cwds: HashMap<String, String>,
     /// session_id → SessionState (populated on SessionStart).
     sessions: HashMap<String, SessionState>,
+    /// OS notification service. Optional so unit tests can construct a
+    /// `AgentTurnMod` without a Tauri AppHandle. In production, set via
+    /// `with_notifications` during engine wiring in `lib.rs`.
+    notifications: Option<Arc<NotificationService>>,
 }
 
 impl AgentTurnMod {
@@ -52,7 +58,15 @@ impl AgentTurnMod {
             emitters: HashMap::new(),
             tab_cwds: HashMap::new(),
             sessions: HashMap::new(),
+            notifications: None,
         }
+    }
+
+    /// Builder-style: attach the notification service. Wired in `lib.rs` after
+    /// the service is created with the AppHandle.
+    pub fn with_notifications(mut self, service: Arc<NotificationService>) -> Self {
+        self.notifications = Some(service);
+        self
     }
 
     // ── Resolution helpers ────────────────────────────────────────────────────
@@ -99,6 +113,25 @@ impl AgentTurnMod {
             data["message"] = serde_json::Value::String(msg.to_string());
         }
         emitter.emit("agent_turn", "agent_state_changed", data);
+    }
+
+    /// Forward a state transition to the OS notification service. Caller
+    /// passes the agent_id from the hook payload — `NotificationService`
+    /// resolves the human-readable display name from the registry.
+    fn notify(
+        &self,
+        tab_id: &str,
+        agent_id: &str,
+        state: AgentNotifyState,
+        message: Option<&str>,
+    ) {
+        let Some(svc) = self.notifications.as_ref() else { return };
+        svc.clone().maybe_notify(
+            tab_id.to_string(),
+            agent_id.to_string(),
+            state,
+            message.map(|s| s.to_string()),
+        );
     }
 }
 
@@ -166,6 +199,9 @@ impl AgentTurnMod {
             SessionState { tab_id: tab_id.clone(), pending_question: None },
         );
         self.emit_state(&tab_id, "idle", None);
+        // Notify with `Idle` so transition detection has the right baseline.
+        // The notification service treats Idle as non-firing but tracks it.
+        self.notify(&tab_id, &payload.agent, AgentNotifyState::Idle, None);
     }
 
     fn handle_in_progress(&mut self, payload: &HookPayload) {
@@ -184,6 +220,7 @@ impl AgentTurnMod {
 
         // Step 3 — emit (immutable borrow).
         self.emit_state(&tab_id, "in-progress", None);
+        self.notify(&tab_id, &payload.agent, AgentNotifyState::InProgress, None);
     }
 
     fn handle_save_question(&mut self, payload: &HookPayload) {
@@ -223,6 +260,12 @@ impl AgentTurnMod {
             .or_else(|| Some("Needs your attention".to_string()));
 
         self.emit_state(&tab_id, "awaiting", message.as_deref());
+        self.notify(
+            &tab_id,
+            &payload.agent,
+            AgentNotifyState::Awaiting,
+            message.as_deref(),
+        );
     }
 
     fn handle_completed(&mut self, payload: &HookPayload) {
@@ -235,6 +278,8 @@ impl AgentTurnMod {
             .clone()
             .filter(|m| !m.trim().is_empty());
         let transcript = payload.transcript_path.clone();
+        let agent_id = payload.agent.clone();
+        let notifications = self.notifications.clone();
 
         tokio::spawn(async move {
             let message = if let Some(msg) = direct_msg {
@@ -244,13 +289,25 @@ impl AgentTurnMod {
             } else {
                 None
             };
+            let truncated_message = message
+                .as_ref()
+                .map(|msg| msg.chars().take(200).collect::<String>());
 
             let mut data = serde_json::json!({ "state": "completed" });
-            if let Some(msg) = message {
-                let truncated: String = msg.chars().take(200).collect();
-                data["message"] = serde_json::Value::String(truncated);
+            if let Some(msg) = truncated_message.as_ref() {
+                data["message"] = serde_json::Value::String(msg.clone());
             }
             emitter.emit("agent_turn", "agent_state_changed", data);
+
+            // Fire notification with the same truncated message.
+            if let Some(svc) = notifications {
+                svc.maybe_notify(
+                    tab_id,
+                    agent_id,
+                    AgentNotifyState::Completed,
+                    truncated_message,
+                );
+            }
         });
     }
 
@@ -265,6 +322,12 @@ impl AgentTurnMod {
         // Remove the session.
         if let Some(sid) = &payload.session_id {
             self.sessions.remove(sid.as_str());
+        }
+
+        // Cancel any pending notification for this tab — session is over,
+        // any leftover banner is no longer relevant.
+        if let (Some(svc), Some(tid)) = (self.notifications.as_ref(), tab_id.as_ref()) {
+            svc.cancel(tid);
         }
 
         // Emit idle to clear the completed badge.

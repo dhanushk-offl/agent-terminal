@@ -1,5 +1,23 @@
+import { invoke } from '@tauri-apps/api/core'
 import { atom } from 'nanostores'
 import { $projects } from '@/modules/stores/$projects'
+import { makeTabKey } from '@/screens/workspace/workspace.helpers'
+
+/**
+ * Best-effort: clear any pending OS notification for the navigated tab.
+ * Navigating counts as acknowledgement. Failures are swallowed (the user
+ * is doing something else important — notification cleanup is a side
+ * effect, never the focus).
+ *
+ * Takes a project_id + tab_id pair (NOT a composite) and turns them into
+ * the composite the backend keys notifications by.
+ */
+function dismissNotification(projectId: string, tabId: string): void {
+  const composite = makeTabKey(projectId, tabId)
+  invoke('notif_cancel', { tabId: composite }).catch(() => {
+    /* ignored */
+  })
+}
 
 // The currently active project ID.
 export const $activeProjectId = atom<string>('')
@@ -26,6 +44,7 @@ export function navigateToProject(projectId: string): void {
 export function navigateToTab(projectId: string, tabId: string): void {
   $activeProjectId.set(projectId)
   $activeTabId.set({ ...$activeTabId.get(), [projectId]: tabId })
+  dismissNotification(projectId, tabId)
 }
 
 /**
@@ -34,6 +53,8 @@ export function navigateToTab(projectId: string, tabId: string): void {
  * remaining tab (previous if possible, otherwise first remaining, otherwise '').
  */
 export function onTabRemoved(projectId: string, removedTabId: string): void {
+  // Closing a tab also dismisses any pending notification for it.
+  dismissNotification(projectId, removedTabId)
   const project = $projects.get().find((p) => p.id === projectId)
   if (!project) return
   const current = $activeTabId.get()[projectId]

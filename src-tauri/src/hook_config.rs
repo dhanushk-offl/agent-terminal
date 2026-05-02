@@ -81,6 +81,20 @@ pub static AGENT_HOOK_CONFIGS: &[AgentHookConfig] = &[
     },
 ];
 
+// ─── Registry lookup ──────────────────────────────────────────────────────────
+
+/// Looks up an `AgentHookConfig` by its `agent_id` (e.g. `"claude-code"`).
+///
+/// This is the canonical way for per-agent mods (and any other consumer) to
+/// resolve human-readable display names without re-declaring constants.
+/// `ClaudeCodeMod` and `CodexMod` both call this when emitting
+/// `tab_type_changed` so that the agent's display name on the wire stays
+/// in lock-step with the registry — adding a new agent means one new entry
+/// in `AGENT_HOOK_CONFIGS` and nothing else.
+pub fn config_for_agent_id(agent_id: &str) -> Option<&'static AgentHookConfig> {
+    AGENT_HOOK_CONFIGS.iter().find(|c| c.agent_id == agent_id)
+}
+
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 /// Silently installs/verifies hooks for all registered agents.
