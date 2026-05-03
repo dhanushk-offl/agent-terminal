@@ -107,3 +107,18 @@ export const Keys = {
 } as const
 
 export type KeyName = (typeof Keys)[keyof typeof Keys]
+
+/**
+ * Modifier names accepted by react-hotkeys-hook binding strings. Same
+ * single-source-of-truth rationale as `Keys` — callsites compose
+ * `${Mod.Meta}+${Keys.T}` instead of literal `"meta+t"` so the modifier
+ * names are typed at every binding.
+ */
+export const Mod = {
+  Meta: 'meta',
+  Ctrl: 'ctrl',
+  Alt: 'alt',
+  Shift: 'shift',
+} as const
+
+export type ModName = (typeof Mod)[keyof typeof Mod]
