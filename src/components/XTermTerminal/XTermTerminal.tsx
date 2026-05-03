@@ -1,13 +1,25 @@
+import { useStore } from '@nanostores/react'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { ITheme } from '@xterm/xterm'
 import { Terminal } from '@xterm/xterm'
 import React, { useEffect, useRef } from 'react'
+import { $activeSearch } from '@/modules/stores/$activeSearch'
+import { $fontSize } from '@/modules/stores/$fontSize'
 
 export type XTermHandle = {
   write: (data: string) => void
   focus: () => void
+  /** Clears the visible buffer + scrollback (xterm `term.clear()`). */
+  clear: () => void
+  /** Selects all text in the buffer. */
+  selectAll: () => void
+  /** Jumps to the next match for the current `$activeSearch` query. */
+  searchNext: () => void
+  /** Jumps to the previous match for the current `$activeSearch` query. */
+  searchPrevious: () => void
 }
 
 type Props = {
@@ -92,16 +104,16 @@ const LIGHT_THEME: ITheme = {
 // Returns true when the key combo is claimed by the app's hotkey layer
 // (react-hotkeys-hook at document level). Returning false from xterm's
 // attachCustomKeyEventHandler skips xterm's own handler so the event bubbles.
+//
+// Cmd-based: every app shortcut uses Cmd, and Cmd+anything has no
+// meaningful translation to a PTY control byte on macOS — so suppressing
+// xterm's handler for any meta-key combo is safe and removes the
+// per-shortcut allowlist that grew with the keymap.
+//
+// Browser-level shortcuts (Cmd+C/V copy/paste) are handled above xterm
+// in the contenteditable layer and are unaffected by this filter.
 function isAppShortcut(e: KeyboardEvent): boolean {
-  if (!e.ctrlKey) return false
-  return (
-    e.key === 'Tab' || // Ctrl+Tab, Ctrl+Shift+Tab
-    e.key === 't' ||
-    e.key === 'T' || // Ctrl+T
-    e.key === 'w' ||
-    e.key === 'W' || // Ctrl+W
-    '123456789'.includes(e.key) // Ctrl+1–9
-  )
+  return e.metaKey
 }
 
 export const XTermTerminal = React.memo(function XTermTerminal({
@@ -113,6 +125,8 @@ export const XTermTerminal = React.memo(function XTermTerminal({
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const searchAddonRef = useRef<SearchAddon | null>(null)
+  const fontSize = useStore($fontSize)
 
   // Keep callbacks in refs so the mount-once effect always calls the latest
   // versions without needing to re-run when they change reference.
@@ -136,11 +150,13 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
     // xterm is fully synchronous — no WASM init required.
+    // Read $fontSize.get() (not the closure-captured `fontSize`) so the
+    // mount-once effect picks up any persisted value at construction time.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
       theme: darkMq.matches ? DARK_THEME : LIGHT_THEME,
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
-      fontSize: 13,
+      fontSize: $fontSize.get(),
       lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: 'block',
@@ -150,9 +166,11 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     const fitAddon = new FitAddon()
     const unicode11Addon = new Unicode11Addon()
+    const searchAddon = new SearchAddon()
 
     term.loadAddon(fitAddon)
     term.loadAddon(unicode11Addon)
+    term.loadAddon(searchAddon)
     term.open(container)
 
     // Activate Unicode 11 after open() per addon docs.
@@ -160,6 +178,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     termRef.current = term
     fitAddonRef.current = fitAddon
+    searchAddonRef.current = searchAddon
 
     // Pass app-level shortcuts through to document-level hotkey handlers.
     // xterm calls preventDefault on keys it processes; returning false here
@@ -214,6 +233,26 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     onReadyRef.current({
       write: (data) => termRef.current?.write(data),
       focus: () => termRef.current?.focus(),
+      clear: () => termRef.current?.clear(),
+      selectAll: () => termRef.current?.selectAll(),
+      searchNext: () => {
+        const s = $activeSearch.get()
+        if (!s?.query) return
+        searchAddonRef.current?.findNext(s.query, {
+          caseSensitive: s.matchCase,
+          wholeWord: s.wholeWord,
+          regex: s.regex,
+        })
+      },
+      searchPrevious: () => {
+        const s = $activeSearch.get()
+        if (!s?.query) return
+        searchAddonRef.current?.findPrevious(s.query, {
+          caseSensitive: s.matchCase,
+          wholeWord: s.wholeWord,
+          regex: s.regex,
+        })
+      },
     })
 
     return () => {
@@ -224,13 +263,25 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       dataDisposable.dispose()
       resizeDisposable.dispose()
       webglAddon?.dispose()
+      searchAddon.dispose()
       fitAddon.dispose()
       unicode11Addon.dispose()
       term.dispose()
       termRef.current = null
       fitAddonRef.current = null
+      searchAddonRef.current = null
     }
   }, []) // mount once — callbacks are accessed via stable refs
+
+  // React to font-size changes globally. Defer fit() so the canvas
+  // re-rasterizes glyphs at the new size before recomputing cols/rows.
+  useEffect(() => {
+    const term = termRef.current
+    const fit = fitAddonRef.current
+    if (!term || !fit) return
+    term.options.fontSize = fontSize
+    requestAnimationFrame(() => fit.fit())
+  }, [fontSize])
 
   return (
     <div ref={containerRef} className={className ?? 'h-full min-h-0 w-full'} />

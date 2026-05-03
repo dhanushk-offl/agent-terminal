@@ -1,5 +1,7 @@
 import { atom } from 'nanostores'
 import { IPC } from '@/modules/ipc/commands'
+import { pushClosedTab } from '@/modules/stores/$closedTabs'
+import { $tabMeta } from '@/modules/stores/$tabMeta'
 import {
   dedupeLabel,
   makeTabKey,
@@ -96,6 +98,22 @@ export function removeProject(projectId: string): void {
 }
 
 export function removeTab(projectId: string, tabId: string): void {
+  // Snapshot the tab into the closed-tab stack BEFORE we destroy it. Read
+  // the cwd from $tabMeta first (latest OSC 7) and fall back to the tab's
+  // own lastCwd (which only updates on persist) so reopen lands the user
+  // back where they left off, not where the tab originally spawned.
+  const project = $projects.get().find((p) => p.id === projectId)
+  const tab = project?.tabs.find((t) => t.id === tabId)
+  if (project && tab) {
+    const meta = $tabMeta.get()[makeTabKey(projectId, tabId)]
+    pushClosedTab({
+      projectId,
+      label: tab.label,
+      cwd: meta?.cwd ?? tab.lastCwd,
+      closedAt: Date.now(),
+    })
+  }
+
   IPC.closeTab(makeTabKey(projectId, tabId)).catch(() => {})
   const updated = $projects
     .get()
