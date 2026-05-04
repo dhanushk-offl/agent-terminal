@@ -29,13 +29,11 @@ import { cn } from '@/lib/utils'
 import { $metaHeld } from '@/modules/stores/$keyboard'
 import {
   $activeProjectId,
-  $activeTabId,
   navigateToProject,
-  navigateToTab,
+  openNewTabInProject,
 } from '@/modules/stores/$navigation'
 import {
   $projects,
-  addTab,
   removeProject,
   renameProject,
   reorderTabs,
@@ -104,15 +102,7 @@ export function SidebarProjectRow({ project }: { project: Project }) {
   }
 
   function handleAddTab() {
-    const tabId = $activeTabId.get()[project.id]
-    const cwd = tabId
-      ? ($tabMeta.get()[makeTabKey(project.id, tabId)]?.cwd ?? '')
-      : ''
-    const newTab = addTab(project.id, cwd || undefined)
-    if (newTab) {
-      navigateToProject(project.id)
-      navigateToTab(project.id, newTab.id)
-    }
+    openNewTabInProject(project.id)
   }
 
   return (

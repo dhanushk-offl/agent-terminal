@@ -20,6 +20,7 @@ import {
   navigateToProject,
   navigateToTab,
   onTabRemoved,
+  openNewTabInProject,
 } from '@/modules/stores/$navigation'
 import {
   $projects,
@@ -93,9 +94,7 @@ export function WorkspaceLayout() {
   useHotkeys(
     `${Mod.Meta}+${Keys.T}`,
     () => {
-      const projectId = $activeProjectId.get()
-      const newTab = addTab(projectId)
-      if (newTab) navigateToTab(projectId, newTab.id)
+      openNewTabInProject($activeProjectId.get())
     },
     hotkeyOpts,
   )

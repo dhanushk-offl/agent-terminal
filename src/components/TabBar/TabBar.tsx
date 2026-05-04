@@ -23,13 +23,12 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import {
-  $activeProjectId,
   $activeTabId,
   navigateToTab,
   onTabRemoved,
+  openNewTabInProject,
 } from '@/modules/stores/$navigation'
 import {
-  addTab,
   removeTab,
   reorderTabs,
   toggleTabPin,
@@ -185,15 +184,7 @@ export function TabBar({ project }: { project: Project }) {
   }
 
   function handleAddTab() {
-    const projectId = $activeProjectId.get()
-    const tabId = $activeTabId.get()[projectId]
-    const cwd = tabId
-      ? ($tabMeta.get()[makeTabKey(projectId, tabId)]?.cwd ?? '')
-      : ''
-    const newTab = addTab(project.id, cwd || undefined)
-    if (newTab) {
-      navigateToTab(project.id, newTab.id)
-    }
+    openNewTabInProject(project.id)
   }
 
   return (
