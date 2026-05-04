@@ -1,9 +1,11 @@
 import { useStore } from '@nanostores/react'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { Sidebar } from '@/components/Sidebar/Sidebar'
 import { StatusBar } from '@/components/StatusBar/StatusBar'
 import { TerminalSearchBar } from '@/components/TerminalSearchBar/TerminalSearchBar'
+import { formatDropPayload } from '@/modules/dragDrop/dropPayload'
 import { Keys, Mod } from '@/modules/keymap/keys'
 import { $activeSearch, openSearch } from '@/modules/stores/$activeSearch'
 import { $activeTerminalHandle } from '@/modules/stores/$activeTerminal'
@@ -82,6 +84,26 @@ export function WorkspaceLayout() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
+  // File drag-drop — Tauri 2 captures the OS drop at the window level
+  // (default `dragDropEnabled: true`) and emits a JS event. On `drop` we
+  // shell-quote the paths and write them into the active terminal's PTY,
+  // which makes the experience identical to Apple Terminal / iTerm2 /
+  // Ghostty: the agent (Claude / Codex) or shell sees the path text and
+  // decides what to do with it.
+  useEffect(() => {
+    const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type !== 'drop') return
+      const payload = formatDropPayload(event.payload.paths)
+      if (!payload) return
+      // No active terminal (e.g. no projects open yet) — drop silently.
+      // Same posture as the other global handlers.
+      $activeTerminalHandle.get()?.sendToPty(payload)
+    })
+    return () => {
+      unlistenPromise.then((fn) => fn()).catch(() => {})
     }
   }, [])
 

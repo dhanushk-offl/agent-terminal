@@ -26,6 +26,14 @@ export type XTermHandle = {
   searchNext: (opts?: { incremental?: boolean }) => void
   /** Jumps to the previous match for the current `$activeSearch` query. */
   searchPrevious: () => void
+  /**
+   * Writes data into the PTY as if the user typed it. Goes through the
+   * same `onData` channel xterm uses for keypresses, so it ends up at
+   * `IPC.writePty(tabKey, data)` via TerminalPane's `handleData`. Used
+   * by the file-drop flow and any future flow that injects text on
+   * the user's behalf.
+   */
+  sendToPty: (data: string) => void
 }
 
 type Props = {
@@ -199,6 +207,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
           regex: s.regex,
         })
       },
+      sendToPty: (data) => onDataRef.current(data),
     })
 
     return () => {
