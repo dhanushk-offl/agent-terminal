@@ -177,34 +177,20 @@ describe('getActiveTerminalHandle()', () => {
     expect(getActiveTerminalHandle()).toBe(h)
   })
 
-  /**
-   * The headline test for this refactor. The single global atom on `main`
-   * fails this case: pane B's handle stays in the slot after switching
-   * back to project A because the registration effect was keyed on per-
-   * project `isActive`, which never flipped on project navigation.
-   *
-   * The structural fix makes this case correct *without any pane effect
-   * firing*: navigation alone updates `$activeTabKey`, and the lookup
-   * resolves through the registry that already holds both panes' handles.
-   */
   test('17: switching projects switches the active handle without re-registering panes', () => {
     const aHandle = fakeHandle()
     const bHandle = fakeHandle()
-    // Both panes registered once, at their respective mount time.
     registerTerminalHandle('claude-ui:dev', aHandle)
     registerTerminalHandle('api-service:logs', bHandle)
 
-    // Project A active → expect A's handle.
     $activeTabId.set({ 'claude-ui': 'dev', 'api-service': 'logs' })
     $activeProjectId.set('claude-ui')
     expect(getActiveTerminalHandle()).toBe(aHandle)
 
-    // Project B becomes active. Crucially: no register / unregister call
-    // happens here. The active handle must still update.
+    // Project flip alone — no register/unregister call in between.
     $activeProjectId.set('api-service')
     expect(getActiveTerminalHandle()).toBe(bHandle)
 
-    // Back to A. Same registry contents, same outcome — symmetric.
     $activeProjectId.set('claude-ui')
     expect(getActiveTerminalHandle()).toBe(aHandle)
   })

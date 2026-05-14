@@ -37,10 +37,6 @@ export function WorkspaceView({ project }: Props) {
       <div className="relative min-h-0 flex-1 bg-terminal">
         {project.tabs.map((tab) => {
           if (!mounted.has(tab.id)) return null
-          // App-scoped: a pane is only "active" when ITS project is the active
-          // project AND it's that project's active tab. Without the project
-          // gate, panes in CSS-hidden projects keep claiming activity, which
-          // would mis-route auto-focus and any future isActive-keyed feature.
           const isActive =
             project.id === activeProjectId && tab.id === activeTabId
           return (

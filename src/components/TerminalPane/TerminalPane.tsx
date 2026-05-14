@@ -54,17 +54,9 @@ export const TerminalPane = React.memo(function TerminalPane({
     }
   }, [isActive])
 
-  // Register this pane in the global handle registry while mounted.
-  // Registration is mount-scoped (NOT isActive-scoped) so the registry
-  // contains every live PTY. Which one is "active" is answered separately
-  // by `$activeTabKey`, derived from navigation state — that decoupling
-  // is what makes drag-drop / Cmd+F / Cmd+K target the right pane after
-  // arbitrary project-switching.
-  //
-  // The first run of this effect happens before xterm fires onReady, so
-  // `handleRef.current` is null and we no-op. `handleReady` (below) does
-  // the initial registration; this effect handles re-registration on
-  // tabKey change (rare — tabKey is stable per pane lifetime).
+  // Registry membership is mount-scoped, not isActive-scoped. First mount
+  // runs before xterm's onReady, so handleRef is null and we no-op;
+  // handleReady does the initial register.
   useEffect(() => {
     const handle = handleRef.current
     if (!handle) return
@@ -89,12 +81,6 @@ export const TerminalPane = React.memo(function TerminalPane({
   const handleReady = useCallback(
     (handle: XTermHandle) => {
       handleRef.current = handle
-      // First-paint registration: the mount effect above ran when
-      // handleRef was still null, so register the handle here now that
-      // xterm is ready. The race-safe identity guard inside
-      // unregisterTerminalHandle makes a double-call from StrictMode's
-      // dev double-fire safe — second call replaces the same entry, and
-      // unmount still cleans up the one and only slot.
       registerTerminalHandle(tabKey, handle)
 
       if (pendingOpens.has(tabKey)) return
