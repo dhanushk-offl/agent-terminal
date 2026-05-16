@@ -54,24 +54,27 @@ impl GitMonitorMod {
     pub fn new() -> Self {
         Self { tabs: HashMap::new() }
     }
+}
 
-    /// Spawn a git query and, after it returns, update the per-tab refresh
-    /// cadence based on whether the PR has pending checks.
-    fn spawn_git_query(
-        &self,
-        cwd: String,
-        emitter: AsyncEmitter,
-        interval_tx: watch::Sender<u64>,
-    ) {
-        tokio::spawn(async move {
-            let data = query_git_info(&cwd).await;
-            let desired = desired_interval_secs(&data);
-            if *interval_tx.borrow() != desired {
-                let _ = interval_tx.send(desired);
-            }
-            emitter.emit("git_monitor", "git_info", data);
-        });
-    }
+/// Spawn a git query and, after it returns, update the per-tab refresh
+/// cadence based on whether the PR has pending checks.
+///
+/// Lives as a free function (not a `&self` method) so callers holding a
+/// `&mut GitTabState` from `self.tabs.get_mut(...)` can call it without
+/// triggering a `self` re-borrow conflict.
+fn spawn_git_query(
+    cwd: String,
+    emitter: AsyncEmitter,
+    interval_tx: watch::Sender<u64>,
+) {
+    tokio::spawn(async move {
+        let data = query_git_info(&cwd).await;
+        let desired = desired_interval_secs(&data);
+        if *interval_tx.borrow() != desired {
+            let _ = interval_tx.send(desired);
+        }
+        emitter.emit("git_monitor", "git_info", data);
+    });
 }
 
 impl Mod for GitMonitorMod {
@@ -223,7 +226,7 @@ impl Mod for GitMonitorMod {
 
         // Fire an immediate git query for the new directory.
         state.last_query_at = Some(Instant::now());
-        self.spawn_git_query(cwd.to_string(), ctx.async_emitter(), state.interval_tx.clone());
+        spawn_git_query(cwd.to_string(), ctx.async_emitter(), state.interval_tx.clone());
     }
 
     fn on_close(&mut self, ctx: &ModContext) {
