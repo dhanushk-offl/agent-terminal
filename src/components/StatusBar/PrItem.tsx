@@ -1,7 +1,7 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import {
   GitMerge,
-  GitPullRequest,
+  GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from 'lucide-react'
@@ -98,7 +98,7 @@ function StateIcon({ pr }: { pr: PrInfo }) {
     )
   }
   return (
-    <GitPullRequest
+    <GitPullRequestArrow
       aria-hidden="true"
       {...sz}
       className="shrink-0"
