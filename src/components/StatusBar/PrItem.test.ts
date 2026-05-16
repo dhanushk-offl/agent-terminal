@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   checksColor,
+  stateColor,
   stateLabel,
   truncate,
 } from '@/components/StatusBar/PrItem'
@@ -66,6 +67,34 @@ describe('stateLabel', () => {
 
   test('closed reads as "closed"', () => {
     expect(stateLabel(pr({ state: 'CLOSED' }))).toBe('closed')
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * stateColor — maps to the github.com Primer palette for familiarity
+ * -------------------------------------------------------------------------*/
+
+describe('stateColor', () => {
+  test('open non-draft → pr-open (green)', () => {
+    expect(stateColor(pr())).toBe('var(--pr-open)')
+  })
+
+  test('open + isDraft → pr-draft (grey)', () => {
+    expect(stateColor(pr({ isDraft: true }))).toBe('var(--pr-draft)')
+  })
+
+  test('merged → pr-merged (purple); wins over isDraft', () => {
+    expect(stateColor(pr({ state: 'MERGED' }))).toBe('var(--pr-merged)')
+    expect(stateColor(pr({ state: 'MERGED', isDraft: true }))).toBe(
+      'var(--pr-merged)',
+    )
+  })
+
+  test('closed → pr-closed (red); wins over isDraft', () => {
+    expect(stateColor(pr({ state: 'CLOSED' }))).toBe('var(--pr-closed)')
+    expect(stateColor(pr({ state: 'CLOSED', isDraft: true }))).toBe(
+      'var(--pr-closed)',
+    )
   })
 })
 

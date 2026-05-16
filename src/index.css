@@ -132,6 +132,13 @@
   --terminal-magenta: #7a4dbf;
   --terminal-cyan: #1e7a9e;
 
+  /* GitHub PR state — Primer tokens so the PR pill matches the colours
+     users already associate with these states on github.com. */
+  --pr-open: #1a7f37;
+  --pr-closed: #cf222e;
+  --pr-merged: #8250df;
+  --pr-draft: #59636e;
+
   /* Status bar */
   --status-bar-background: #fafafa;
   --status-bar-border: rgba(0, 0, 0, 0.06);
@@ -222,6 +229,12 @@
     --terminal-red: #f7768e;
     --terminal-magenta: #bb9af7;
     --terminal-cyan: #7dcfff;
+
+    /* GitHub PR state — Primer dark-mode tokens. */
+    --pr-open: #3fb950;
+    --pr-closed: #f85149;
+    --pr-merged: #a371f7;
+    --pr-draft: #9198a1;
 
     /* Status bar */
     --status-bar-background: #141517;

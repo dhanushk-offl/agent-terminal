@@ -46,18 +46,31 @@ export function stateLabel(pr: PrInfo): string {
 }
 
 /**
+ * The colour for the PR icon and number, matching github.com's familiar
+ * palette: green open, red closed, purple merged, grey draft. Sourced from
+ * Primer tokens via CSS variables in index.css (light + dark variants).
+ */
+export function stateColor(pr: PrInfo): string {
+  if (pr.state === 'MERGED') return 'var(--pr-merged)'
+  if (pr.state === 'CLOSED') return 'var(--pr-closed)'
+  if (pr.isDraft) return 'var(--pr-draft)'
+  return 'var(--pr-open)'
+}
+
+/**
  * Picks the state icon. Order matters: MERGED and CLOSED take precedence
  * over isDraft because a draft that gets merged still reads as "merged."
  */
 function StateIcon({ pr }: { pr: PrInfo }) {
   const sz = { size: 10, strokeWidth: 1.5 } as const
+  const color = stateColor(pr)
   if (pr.state === 'MERGED') {
     return (
       <GitMerge
         aria-hidden="true"
         {...sz}
         className="shrink-0"
-        style={{ color: 'var(--terminal-magenta)' }}
+        style={{ color }}
         data-testid="pr-icon-merged"
       />
     )
@@ -68,7 +81,7 @@ function StateIcon({ pr }: { pr: PrInfo }) {
         aria-hidden="true"
         {...sz}
         className="shrink-0"
-        style={{ color: 'var(--terminal-red)' }}
+        style={{ color }}
         data-testid="pr-icon-closed"
       />
     )
@@ -78,7 +91,8 @@ function StateIcon({ pr }: { pr: PrInfo }) {
       <GitPullRequestDraft
         aria-hidden="true"
         {...sz}
-        className="shrink-0 opacity-60"
+        className="shrink-0"
+        style={{ color }}
         data-testid="pr-icon-draft"
       />
     )
@@ -88,6 +102,7 @@ function StateIcon({ pr }: { pr: PrInfo }) {
       aria-hidden="true"
       {...sz}
       className="shrink-0"
+      style={{ color }}
       data-testid="pr-icon-open"
     />
   )
@@ -206,7 +221,7 @@ export function PrItem({ git }: { git: GitInfo }) {
             />
           )}
           <StateIcon pr={pr} />
-          <span>#{pr.number}</span>
+          <span style={{ color: stateColor(pr) }}>#{pr.number}</span>
           <span className="truncate opacity-80">
             {truncate(pr.title, TITLE_MAX)}
           </span>
