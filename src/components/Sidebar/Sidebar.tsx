@@ -64,7 +64,7 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-[232px] min-w-[232px] flex-col border-sidebar-border border-r bg-sidebar">
+    <div className="flex h-full w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] flex-col border-sidebar-border border-r bg-sidebar">
       {/* Header — drag region, reserves traffic-light space */}
       <div
         data-tauri-drag-region

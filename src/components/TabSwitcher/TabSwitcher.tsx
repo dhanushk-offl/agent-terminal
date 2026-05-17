@@ -104,6 +104,10 @@ export function TabSwitcher() {
       onOpenChange={setOpen}
       title="Tab switcher"
       description="Jump to a recently active tab"
+      // VS Code-style placement: pinned near the top of the terminal area
+      // (not the whole window — sidebar shifts the centre right by
+      // --sidebar-half). top:64px puts it just below the TabBar.
+      className="top-16 left-[calc(50%+var(--sidebar-half))] sm:max-w-[600px]"
     >
       {/* shouldFilter=false: we own the filter (filterSwitcherRows) so we
           can preserve recency order among matches. cmdk's default filter
@@ -114,7 +118,7 @@ export function TabSwitcher() {
           value={query}
           onValueChange={setQuery}
         />
-        <CommandList className="max-h-[440px] p-1.5">
+        <CommandList className="max-h-[380px] p-1.5">
           <CommandEmpty className="py-8 text-sm opacity-60">
             No matching tabs.
           </CommandEmpty>
