@@ -8,6 +8,7 @@
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json --features dev-instance",
     "build": "vite build",
     "tauri:build": "tauri build",
+    "tauri:build:linux": "tauri build --config src-tauri/tauri.conf.json",
     "preview": "vite preview",
     "lint": "biome check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",

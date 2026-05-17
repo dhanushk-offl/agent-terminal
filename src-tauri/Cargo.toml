@@ -38,7 +38,6 @@ tauri-plugin-notification = "2"
 # UNUserNotificationCenter on macOS so we get real per-notification click
 # callbacks via UNUserNotificationCenterDelegate. Mock mode falls back to
 # console logs (used in tests, never in shipped builds).
-user-notify = "0.4"
 portable-pty = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -47,4 +46,10 @@ axum = "0.8"
 dirs = "5"
 encoding_rs = "0.8"
 sysinfo = "0.33"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+user-notify = "0.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4"
 

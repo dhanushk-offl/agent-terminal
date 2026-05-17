@@ -40,5 +40,12 @@
       "hardenedRuntime": true,
       "entitlements": "macos/entitlements.plist"
     }
+    ,
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libssl1.1"]
+      },
+      "appimage": {}
+    }
   }
 }

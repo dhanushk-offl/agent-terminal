@@ -93,7 +93,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             {/* Navigation area — fills the pill, triggers tab switch */}
             <button
               type="button"
-              className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-1 pl-3"
+              className="flex flex-1 cursor-pointer items-center gap-1.5 overflow-hidden pr-8 pl-3"
               onClick={() => navigateToTab(projectId, tab.id)}
             >
               <TabStatusIcon
@@ -112,7 +112,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             {tab.pinned ? (
               <button
                 type="button"
-                className="mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:opacity-100"
+                className="relative z-10 -ml-7 mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-tab-fg-active opacity-85 hover:opacity-100"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -124,14 +124,14 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             ) : (
               <button
                 type="button"
-                className="mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded opacity-40 hover:bg-sidebar-hover hover:opacity-100"
+                className="relative z-10 -ml-7 mr-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-tab-fg-active opacity-85 hover:bg-sidebar-hover hover:opacity-100"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
                   handleClose()
                 }}
               >
-                <X size={9} />
+                <X size={12} />
               </button>
             )}
           </div>
