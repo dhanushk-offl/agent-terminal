@@ -1,4 +1,4 @@
-name: Release (Linux: AppImage + DEB)
+name: "Release (Linux: AppImage + DEB)"
 
 on:
   push:
