@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { RunningDot } from '@/components/RunningDot'
+import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta, type TabMeta } from '@/modules/stores/$tabMeta'
 import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'
@@ -113,6 +114,7 @@ export function StatusBarLeft() {
 
   return (
     <div className="mr-auto flex min-w-0 items-center gap-1.5 overflow-hidden">
+      <ThemeToggle />
       {items.map((item, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static order, no reordering
         <span key={i} className="flex items-center gap-1.5">

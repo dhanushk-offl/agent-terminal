@@ -49,6 +49,14 @@ export type XTermHandle = {
    * escape garbage.
    */
   pasteToPty: (data: string) => void
+  /**
+   * Recomputes the terminal palette from the document theme and repaints
+   * the visible buffer. Used when the user flips light/dark/system so
+   * any already-rendered CLI output picks up the new colors immediately.
+   * For agent tabs, it also nudges the PTY with a same-size resize so the
+   * CLI redraws its own prompt/input UI instead of keeping stale styling.
+   */
+  applyAppTheme: () => void
 }
 
 type Props = {
@@ -68,8 +76,30 @@ type Props = {
 import { handleKeyEvent } from '@/components/XTermTerminal/xterm-terminal.keys'
 import {
   DARK_THEME,
+  LIGHT_AGENT_THEME,
   LIGHT_THEME,
 } from '@/components/XTermTerminal/xterm-terminal.themes'
+
+function getTerminalTheme(
+  docTheme: string | null,
+  prefersDark: boolean,
+  isAgent: boolean,
+) {
+  const useDark =
+    docTheme === 'dark' ? true : docTheme === 'light' ? false : prefersDark
+  if (useDark) return DARK_THEME
+  return isAgent ? LIGHT_AGENT_THEME : LIGHT_THEME
+}
+
+function applyTerminalTheme(
+  term: Terminal,
+  darkMq: MediaQueryList,
+  isAgent: boolean,
+) {
+  const docTheme = document.documentElement.getAttribute('data-theme')
+  term.options.theme = getTerminalTheme(docTheme, darkMq.matches, isAgent)
+  if (term.rows > 0) term.refresh(0, term.rows - 1)
+}
 
 export const XTermTerminal = React.memo(function XTermTerminal({
   onReady,
@@ -108,20 +138,25 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     let webglAddon: WebglAddon | null = null
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
+    const isAgentSurface = isAgentRef.current
 
     // xterm is fully synchronous — no WASM init required.
     // Read $fontSize.get() (not the closure-captured `fontSize`) so the
     // mount-once effect picks up any persisted value at construction time.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
-      theme: darkMq.matches ? DARK_THEME : LIGHT_THEME,
+      theme: getTerminalTheme(
+        document.documentElement.getAttribute('data-theme'),
+        darkMq.matches,
+        isAgentSurface,
+      ),
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: $fontSize.get(),
       lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: 'block',
       scrollback: 5000,
-      allowTransparency: false,
+      allowTransparency: isAgentSurface,
     })
 
     const fitAddon = new FitAddon()
@@ -176,10 +211,19 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     }
 
     // Swap theme instantly when the OS colour scheme changes.
-    const onColorSchemeChange = (e: MediaQueryListEvent) => {
-      if (!disposed) term.options.theme = e.matches ? DARK_THEME : LIGHT_THEME
+    const onColorSchemeChange = () => {
+      if (!disposed) applyTerminalTheme(term, darkMq, isAgentRef.current)
     }
     darkMq.addEventListener('change', onColorSchemeChange)
+
+    const mo = new MutationObserver(() => {
+      if (disposed) return
+      applyTerminalTheme(term, darkMq, isAgentRef.current)
+    })
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
 
     // Drive fit() via ResizeObserver — fires after layout, no debounce needed.
     // term.onResize notifies the PTY of the new cols/rows via the onResize prop.
@@ -237,11 +281,17 @@ export const XTermTerminal = React.memo(function XTermTerminal({
         const payload = wrap ? `\x1b[200~${data}\x1b[201~` : data
         onDataRef.current(payload)
       },
+      applyAppTheme: () => {
+        const isAgent = isAgentRef.current
+        applyTerminalTheme(term, darkMq, isAgent)
+        if (isAgent) onResizeRef.current(term.cols, term.rows)
+      },
     })
 
     return () => {
       disposed = true
       darkMq.removeEventListener('change', onColorSchemeChange)
+      mo.disconnect()
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()
       dataDisposable.dispose()
