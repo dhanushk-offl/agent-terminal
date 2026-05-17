@@ -26,7 +26,7 @@ import {
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { $tabRecency, $tabRecencyTimes } from '@/modules/stores/$tabRecency'
-import { cwdBasename, MONO_FONT } from '@/screens/workspace/workspace.helpers'
+import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 
 /* ---------------------------------------------------------------------------
  * TabSwitcher — Cmd+P quick-switch palette.
@@ -184,7 +184,12 @@ export function TabSwitcher() {
                   {row.cwd && (
                     <>
                       <span className="opacity-50"> · </span>
-                      {cwdBasename(row.cwd)}
+                      {/* Full cwd path here (not the basename) — the
+                          label already shows the basename for un-renamed
+                          tabs, so basename in meta would just repeat it.
+                          Full path adds context (which subfolder of which
+                          project). truncate handles overflow. */}
+                      {row.cwd}
                     </>
                   )}
                   <span className="opacity-50"> · </span>

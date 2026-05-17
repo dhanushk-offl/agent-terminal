@@ -1,4 +1,7 @@
-import { makeTabKey } from '@/screens/workspace/workspace.helpers'
+import {
+  makeTabKey,
+  resolveTabLabel,
+} from '@/screens/workspace/workspace.helpers'
 import type { Project } from '@/screens/workspace/workspace.types'
 
 /* ---------------------------------------------------------------------------
@@ -11,6 +14,13 @@ export type SwitcherRow = {
   projectId: string
   projectName: string
   tabId: string
+  /**
+   * Display label — already resolved through `resolveTabLabel` (same logic
+   * the sidebar uses), so a user-renamed tab keeps its label, an
+   * un-renamed tab with a known cwd shows the cwd basename, and the raw
+   * stored label is the fallback. Identical between sidebar and palette
+   * by construction.
+   */
   label: string
   cwd?: string
   /**
@@ -48,10 +58,16 @@ export function buildSwitcherRows(args: {
   >()
   for (const p of args.projects) {
     for (const t of p.tabs) {
-      allTabs.set(makeTabKey(p.id, t.id), {
+      const key = makeTabKey(p.id, t.id)
+      // Resolve the display label HERE so every render site (sidebar,
+      // palette, future surfaces) shows the same string for the same
+      // tab. Sidebar pulls from $tabMeta via resolveTabLabel; we do the
+      // same with the meta we already have.
+      const displayLabel = resolveTabLabel(t, args.tabMeta[key]?.cwd)
+      allTabs.set(key, {
         project: p,
         tabId: t.id,
-        label: t.label,
+        label: displayLabel,
       })
     }
   }
