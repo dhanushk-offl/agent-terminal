@@ -45,7 +45,7 @@ jobs:
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libglib2.0-bin pkg-config
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libglib2.0-bin pkg-config libfuse2
 
       - name: Build Tauri (AppImage + deb)
         run: |
