@@ -53,6 +53,9 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 - Git branch, dirty indicator, ahead/behind remote
 - Working directory (hover for full path)
 
+### Theme-aware workspace
+ Switch between light, dark, and system themes from the status bar. The chosen theme now applies across the whole application and the active terminal, so agent sessions stay readable in both light and dark modes.
+
 ### Supported agents
 
 | Agent | Status |
@@ -107,9 +110,9 @@ Already shipped:
 - ✅ Agent turn detection (idle / in-progress / awaiting / done)
 - ✅ Keyboard shortcuts
 - ✅ Universal macOS binary (Apple Silicon + Intel)
+- ✅ Theme toggle with light / dark / system support
 
 Coming next:
-- 🚧 Theming (light / dark / custom palettes)
 - 🚧 More agent integrations (Gemini CLI, Cursor, Open Code)
 - 🚧 Linux support
 - 🚧 Windows support

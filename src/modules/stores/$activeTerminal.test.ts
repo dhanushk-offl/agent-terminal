@@ -39,6 +39,7 @@ function fakeHandle(): XTermHandle {
     searchPrevious: () => {},
     sendToPty: () => {},
     pasteToPty: () => {},
+    applyAppTheme: () => {},
   } as XTermHandle
 }
 
