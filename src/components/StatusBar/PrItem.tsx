@@ -35,8 +35,16 @@ import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 /** Max chars for the inline title before truncating with an ellipsis. */
 export const TITLE_MAX = 40
 
+/**
+ * Truncate by Unicode code points (not UTF-16 code units) so a title ending
+ * with an emoji or other astral character at the boundary doesn't get cut
+ * mid surrogate-pair and render as a replacement glyph. Realistic for PR
+ * titles that follow gitmoji or similar conventions.
+ */
 export function truncate(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s
+  const codePoints = Array.from(s)
+  if (codePoints.length <= n) return s
+  return `${codePoints.slice(0, n - 1).join('')}…`
 }
 
 export function stateLabel(pr: PrInfo): string {

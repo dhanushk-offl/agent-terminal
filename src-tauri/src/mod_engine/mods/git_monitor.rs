@@ -97,7 +97,12 @@ impl Mod for GitMonitorMod {
         //   - Reads the latest CWD from the watch receiver each tick.
         let timer = tokio::spawn(async move {
             loop {
-                let secs = *interval_rx.borrow();
+                // borrow_and_update advances the watch's seen pointer, so a
+                // `send` from the in-loop query below doesn't immediately
+                // resolve the `.changed()` future on the next iteration (which
+                // would trigger one redundant wake + `continue` per cadence
+                // change).
+                let secs = *interval_rx.borrow_and_update();
                 let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(secs));
                 tokio::select! {
                     _ = sleep => {}
@@ -332,7 +337,7 @@ async fn run_gh_pr(root: &str) -> Option<serde_json::Value> {
 
     if output.status.success() {
         let raw: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-        Some(transform_pr(raw))
+        transform_pr(raw)
     } else {
         None
     }
@@ -345,7 +350,16 @@ async fn run_gh_pr(root: &str) -> Option<serde_json::Value> {
 ///
 /// `mergedAt` disambiguates older `gh` versions that return `state: "CLOSED"`
 /// for merged PRs — when `mergedAt` is populated we treat the PR as merged.
-fn transform_pr(raw: serde_json::Value) -> serde_json::Value {
+///
+/// Returns `None` when `number`, `title`, or `url` are missing or the wrong
+/// JSON shape — the frontend's `PrInfo` type asserts those are non-null and
+/// we'd rather drop the pill than emit a misshapen payload that the UI then
+/// has to defensively guard against.
+fn transform_pr(raw: serde_json::Value) -> Option<serde_json::Value> {
+    let number = raw.get("number").and_then(|v| v.as_u64())?;
+    let title = raw.get("title").and_then(|v| v.as_str())?;
+    let url = raw.get("url").and_then(|v| v.as_str())?;
+
     let state = raw.get("state").and_then(|v| v.as_str()).unwrap_or("OPEN");
     let merged_at = raw.get("mergedAt").and_then(|v| v.as_str());
     let normalised_state = match (state, merged_at) {
@@ -360,14 +374,14 @@ fn transform_pr(raw: serde_json::Value) -> serde_json::Value {
         .and_then(|v| v.as_array())
         .map(|arr| summarise_checks(arr));
 
-    serde_json::json!({
-        "number": raw.get("number"),
-        "title": raw.get("title"),
+    Some(serde_json::json!({
+        "number": number,
+        "title": title,
         "state": normalised_state,
         "isDraft": raw.get("isDraft").and_then(|v| v.as_bool()).unwrap_or(false),
-        "url": raw.get("url"),
+        "url": url,
         "checks": checks,
-    })
+    }))
 }
 
 #[derive(Default)]
@@ -381,6 +395,12 @@ struct CheckCounts {
 /// Collapse a `statusCheckRollup` array into a 4-bucket counter. Handles both
 /// GitHub Actions check runs (state lives on `conclusion`/`status`) and
 /// external status contexts (state lives on `state`).
+///
+/// Failing-side coverage is exhaustive on purpose: `STARTUP_FAILURE` and
+/// `STALE` are real CheckRun conclusions that mean "the check broke" — if we
+/// dropped them, a broken CI would render a green dot. `EXPECTED` is a
+/// StatusContext sentinel for "a future check will be reported" and counts as
+/// pending.
 fn summarise_checks(items: &[serde_json::Value]) -> serde_json::Value {
     let mut c = CheckCounts::default();
     for item in items {
@@ -392,10 +412,16 @@ fn summarise_checks(items: &[serde_json::Value]) -> serde_json::Value {
             .unwrap_or("");
         match s {
             "SUCCESS" => c.passing += 1,
-            "FAILURE" | "ERROR" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED" => {
-                c.failing += 1
+            "FAILURE"
+            | "ERROR"
+            | "CANCELLED"
+            | "TIMED_OUT"
+            | "ACTION_REQUIRED"
+            | "STARTUP_FAILURE"
+            | "STALE" => c.failing += 1,
+            "PENDING" | "IN_PROGRESS" | "QUEUED" | "WAITING" | "EXPECTED" => {
+                c.pending += 1
             }
-            "PENDING" | "IN_PROGRESS" | "QUEUED" | "WAITING" => c.pending += 1,
             "SKIPPED" | "NEUTRAL" => c.skipped += 1,
             _ => {}
         }
@@ -467,7 +493,7 @@ mod tests {
                 {"status": "IN_PROGRESS"},
             ],
         });
-        let out = transform_pr(raw);
+        let out = transform_pr(raw).expect("required fields present");
         assert_eq!(out["state"], "OPEN");
         assert_eq!(out["isDraft"], false);
         assert_eq!(out["number"], 42);
@@ -487,7 +513,7 @@ mod tests {
             "url": "u", "isDraft": false, "mergedAt": "2026-01-01T00:00:00Z",
             "statusCheckRollup": [],
         });
-        assert_eq!(transform_pr(raw)["state"], "MERGED");
+        assert_eq!(transform_pr(raw).unwrap()["state"], "MERGED");
     }
 
     #[test]
@@ -497,7 +523,7 @@ mod tests {
             "url": "u", "isDraft": false, "mergedAt": null,
             "statusCheckRollup": [],
         });
-        assert_eq!(transform_pr(raw)["state"], "CLOSED");
+        assert_eq!(transform_pr(raw).unwrap()["state"], "CLOSED");
     }
 
     #[test]
@@ -507,7 +533,7 @@ mod tests {
             "url": "u", "isDraft": false, "mergedAt": "2026-01-01T00:00:00Z",
             "statusCheckRollup": [],
         });
-        assert_eq!(transform_pr(raw)["state"], "MERGED");
+        assert_eq!(transform_pr(raw).unwrap()["state"], "MERGED");
     }
 
     #[test]
@@ -517,7 +543,7 @@ mod tests {
             "url": "u", "isDraft": false, "mergedAt": null,
             "statusCheckRollup": [],
         });
-        let out = transform_pr(raw);
+        let out = transform_pr(raw).expect("required fields present");
         assert_eq!(out["checks"]["total"], 0);
         assert_eq!(out["checks"]["passing"], 0);
     }
@@ -535,7 +561,7 @@ mod tests {
                 {"state": "FAILURE"},
             ],
         });
-        let out = transform_pr(raw);
+        let out = transform_pr(raw).expect("required fields present");
         assert_eq!(out["checks"]["passing"], 1);
         assert_eq!(out["checks"]["pending"], 1);
         assert_eq!(out["checks"]["failing"], 1);
@@ -549,7 +575,7 @@ mod tests {
             "url": "u", "isDraft": true, "mergedAt": null,
             "statusCheckRollup": [],
         });
-        let out = transform_pr(raw);
+        let out = transform_pr(raw).expect("required fields present");
         assert_eq!(out["state"], "OPEN");
         assert_eq!(out["isDraft"], true);
     }
@@ -561,7 +587,66 @@ mod tests {
             "url": "u", "mergedAt": null,
             "statusCheckRollup": [],
         });
-        assert_eq!(transform_pr(raw)["isDraft"], false);
+        assert_eq!(transform_pr(raw).unwrap()["isDraft"], false);
+    }
+
+    #[test]
+    fn missing_required_fields_returns_none() {
+        // Defence against future `gh` payload shape changes — frontend
+        // PrInfo asserts these are non-null, so drop the pill rather than
+        // emit a malformed payload.
+        let no_number = serde_json::json!({
+            "title": "t", "url": "u", "state": "OPEN", "isDraft": false,
+        });
+        let no_title = serde_json::json!({
+            "number": 1, "url": "u", "state": "OPEN", "isDraft": false,
+        });
+        let no_url = serde_json::json!({
+            "number": 1, "title": "t", "state": "OPEN", "isDraft": false,
+        });
+        let null_title = serde_json::json!({
+            "number": 1, "title": null, "url": "u", "state": "OPEN", "isDraft": false,
+        });
+        assert!(transform_pr(no_number).is_none());
+        assert!(transform_pr(no_title).is_none());
+        assert!(transform_pr(no_url).is_none());
+        assert!(transform_pr(null_title).is_none());
+    }
+
+    #[test]
+    fn startup_failure_and_stale_count_as_failing() {
+        // Defence against the silent-green-dot bug — if these fell through
+        // the match they'd disappear from the counter and a broken CI would
+        // show green.
+        let raw = serde_json::json!({
+            "number": 1, "title": "t", "state": "OPEN",
+            "url": "u", "isDraft": false, "mergedAt": null,
+            "statusCheckRollup": [
+                {"conclusion": "STARTUP_FAILURE"},
+                {"conclusion": "STALE"},
+            ],
+        });
+        let out = transform_pr(raw).expect("required fields present");
+        assert_eq!(out["checks"]["failing"], 2);
+        assert_eq!(out["checks"]["passing"], 0);
+        assert_eq!(out["checks"]["total"], 2);
+    }
+
+    #[test]
+    fn expected_status_counts_as_pending() {
+        // `EXPECTED` is the StatusContext sentinel for "a future check will
+        // be reported"; it should keep the dot yellow, not green.
+        let raw = serde_json::json!({
+            "number": 1, "title": "t", "state": "OPEN",
+            "url": "u", "isDraft": false, "mergedAt": null,
+            "statusCheckRollup": [
+                {"state": "SUCCESS"},
+                {"state": "EXPECTED"},
+            ],
+        });
+        let out = transform_pr(raw).expect("required fields present");
+        assert_eq!(out["checks"]["passing"], 1);
+        assert_eq!(out["checks"]["pending"], 1);
     }
 
     #[test]
@@ -576,7 +661,7 @@ mod tests {
                 {"conclusion": "BRAND_NEW_STATE_FROM_FUTURE_GH"},
             ],
         });
-        let out = transform_pr(raw);
+        let out = transform_pr(raw).expect("required fields present");
         assert_eq!(out["checks"]["passing"], 1);
         assert_eq!(out["checks"]["total"], 1);
     }

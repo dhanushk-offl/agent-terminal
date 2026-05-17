@@ -57,7 +57,9 @@ import {
  *
  * Tab with no process data (shell tabs, or agent tabs before first poll):
  *
- *   status · ⎇ branch [●] [↑N] [↓N] · [●] ⊟ #123 title · 📂 /cwd   (status hidden when idle)
+ *   status · ⎇ branch [●] [↑N] [↓N] · [●] ⊟ #123 title · 📂 /cwd
+ *   (status hidden when idle; PR pill omitted when the branch has no PR;
+ *    checks dot hidden when no checks have reported yet)
  *
  * Icon sizing: size=10, strokeWidth=1.5 — visually balanced against 11px mono text.
  * Icon opacity: matches the opacity of the adjacent text item.

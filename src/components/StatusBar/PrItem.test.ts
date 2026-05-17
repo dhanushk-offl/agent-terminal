@@ -32,6 +32,24 @@ describe('truncate', () => {
     expect(truncated.length).toBe(40)
     expect(truncated.endsWith('…')).toBe(true)
   })
+
+  test('does not split surrogate pairs at the truncation boundary', () => {
+    // 🚀 is U+1F680 — a single code point made of two UTF-16 code units.
+    // Pre-fix: slicing by .length would cut between the high and low
+    // surrogate and produce a stray replacement character before the
+    // ellipsis. Post-fix: code-point-based slicing keeps the emoji intact.
+    const titleWithEmoji = `${'a'.repeat(5)}🚀${'b'.repeat(10)}`
+    const truncated = truncate(titleWithEmoji, 7)
+    // First 6 code points (5 'a's + 🚀) then ellipsis = 7 code points total.
+    expect(truncated).toBe(`${'a'.repeat(5)}🚀…`)
+    expect(Array.from(truncated).length).toBe(7)
+    // Crucially: no replacement character (U+FFFD) introduced.
+    expect(truncated.includes('�')).toBe(false)
+  })
+
+  test('short emoji-laden titles pass through unchanged', () => {
+    expect(truncate('🚀🎉✨', 10)).toBe('🚀🎉✨')
+  })
 })
 
 /* ---------------------------------------------------------------------------
