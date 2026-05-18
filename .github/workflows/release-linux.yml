@@ -46,6 +46,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libglib2.0-bin pkg-config libfuse2
+          curl -sSL https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage \
+            -o /usr/local/bin/appimagetool \
+            && echo '0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5  /usr/local/bin/appimagetool' \
+            | sha256sum -c \
+            && chmod +x /usr/local/bin/appimagetool
 
       - name: Build Tauri (AppImage + deb)
         run: |

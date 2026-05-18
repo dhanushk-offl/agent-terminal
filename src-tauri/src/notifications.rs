@@ -11,7 +11,7 @@
 //! |---|---|---|---|
 //! | `cfg(debug_assertions)` (`tauri:dev`) | `tauri-plugin-notification` | ✅ visible | ❌ none — banners are debugging-only |
 //! | `cfg(not(debug_assertions), target_os = "macos")` | `user-notify` (UNUserNotificationCenter) | ✅ visible | ✅ real per-notification callbacks via UNUserNotificationCenterDelegate |
-//! | `cfg(not(debug_assertions), target_os = "linux")` | `notify-rust` | ✅ visible | ⚠️ desktop-environment dependent |
+//! | `cfg(not(debug_assertions), target_os = "linux")` | `notify-rust` | ✅ visible | ✅ click via `"default"` action + `on_closure` |
 //! | `cfg(not(debug_assertions), target_os = "windows")` | `tauri-plugin-notification` | ✅ visible | ❌ none — best-effort fallback for Windows release builds |
 //!
 //! **Why split:** Tauri's notification plugin has zero click-handling
@@ -84,7 +84,8 @@ pub struct NotificationService {
     #[cfg(any(
         debug_assertions,
         all(not(debug_assertions), target_os = "macos"),
-        all(not(debug_assertions), target_os = "windows")
+        all(not(debug_assertions), target_os = "windows"),
+        all(not(debug_assertions), target_os = "linux")
     ))]
     app: AppHandle,
     inner: Mutex<Inner>,
@@ -108,14 +109,12 @@ struct Inner {
 
 impl NotificationService {
     pub fn new(app: AppHandle) -> Arc<Self> {
-        #[cfg(all(not(debug_assertions), target_os = "linux"))]
-        let _ = &app;
-
         let svc = Arc::new(Self {
             #[cfg(any(
                 debug_assertions,
                 all(not(debug_assertions), target_os = "macos"),
-                all(not(debug_assertions), target_os = "windows")
+                all(not(debug_assertions), target_os = "windows"),
+                all(not(debug_assertions), target_os = "linux")
             ))]
             app,
             inner: Mutex::new(Inner {
@@ -624,23 +623,55 @@ mod backend {
 mod backend {
     //! Linux release backend — `notify-rust` (libnotify / DBus).
     //!
-    //! Provides visible desktop banners on Linux desktops. Click/action
-    //! behavior varies by desktop environment; v1 provides best-effort
-    //! delivery without guaranteed per-notification callbacks.
+    //! Provides visible desktop banners on Linux desktops. Notifications
+    //! include a `"default"` action so that clicking the banner emits a
+    //! `notification:click` event to the frontend (desktop-environment
+    //! dependent — some DEs may swallow actions).
 
     use super::{FirePayload, NotificationService};
     use std::sync::Arc;
-    use notify_rust::Notification;
+    use notify_rust::{Notification, Timeout};
+    use tauri::{Emitter, Manager};
 
     pub fn init(_svc: &Arc<NotificationService>) {
         eprintln!("[notifications] linux release backend (notify-rust) initialized");
     }
 
-    pub async fn fire(_svc: &Arc<NotificationService>, payload: FirePayload) {
+    pub async fn fire(svc: &Arc<NotificationService>, payload: FirePayload) {
         let title = payload.title;
         let body = payload.body;
-        match Notification::new().summary(&title).body(&body).show() {
-            Ok(_handle) => {}
+        let composite_id = payload.composite_tab_id.clone();
+        let project_id = payload.project_id.clone();
+        let app = svc.app.clone();
+
+        match Notification::new()
+            .summary(&title)
+            .body(&body)
+            .timeout(Timeout::Default)
+            .action("default", "Open")
+            .show_async()
+        {
+            Ok(handle) => {
+                handle.on_closure(|reason| {
+                    eprintln!("[notifications] notification closed: {reason:?}");
+                    if !matches!(reason, notify_rust::CloseReason::Action(_)) {
+                        return;
+                    }
+                    eprintln!("[notifications] action clicked — focusing window and emitting notification:click");
+                    if let Some(webview) = app.get_webview_window("main") {
+                        let _ = webview.show();
+                        let _ = webview.unminimize();
+                        let _ = webview.set_focus();
+                    }
+                    let _ = app.emit(
+                        "notification:click",
+                        serde_json::json!({
+                            "project_id": project_id,
+                            "tab_id": composite_id,
+                        }),
+                    );
+                });
+            }
             Err(e) => eprintln!("[notifications] notify-rust send failed: {e}"),
         }
     }

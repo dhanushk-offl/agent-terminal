@@ -93,6 +93,59 @@ impl Mod for ShellProcessMod {
     }
 }
 
+/// Resolve a raw process name to a canonical agent ID.
+///
+/// On Linux, Node.js-based agents (Codex CLI, Claude Code) report their
+/// process name as `node` or `node-mainthread` rather than the agent binary
+/// name. This function normalises the name by inspecting the full command
+/// string when the process name alone is ambiguous.
+///
+/// Matching rules:
+///   - `"claude-code"` ← name is `"claude"` OR name starts with `"node"` and
+///     the command contains evidence of Claude Code (argv[0] basename or a
+///     path segment matching `"claude"`).
+///   - `"codex"` ← name is `"codex"` OR name starts with `"node"` and the
+///     command contains evidence of Codex (argv[0] basename or a path
+///     segment matching `"codex"`).
+///   - Otherwise returns the original name unchanged (shell processes etc.)
+fn resolve_agent_name(name: &str, command: &str) -> String {
+    if name == "claude" {
+        return "claude-code".to_string();
+    }
+    if name == "codex" {
+        return "codex".to_string();
+    }
+    if name.starts_with("node") {
+        // Node.js wrapper scripts (e.g. /usr/local/bin/codex) exec the JS
+        // runtime directly, so argv[0] becomes the node binary path and the
+        // actual agent script appears later in the command.  Check argv[0]
+        // basename first (handles `/usr/local/bin/codex`), then scan the rest
+        // of the command for known agent path segments (handles
+        // `/usr/local/bin/node .../codex.js`).
+        let exe = command.split_whitespace().next().unwrap_or("");
+        let exe_name = exe.rsplit('/').next().unwrap_or(exe);
+        let exe_name = exe_name.rsplit('\\').next().unwrap_or(exe_name);
+        if exe_name == "codex" {
+            return "codex".to_string();
+        }
+        if exe_name == "claude" {
+            return "claude-code".to_string();
+        }
+        // argv[0] is the node binary itself — check the remaining args for
+        // agent script paths like ".../codex.js" or ".../claude/...".
+        for arg in command.split_whitespace().skip(1) {
+            let basename = arg.rsplit('/').next().unwrap_or(arg);
+            if basename == "codex" || basename.starts_with("codex.") {
+                return "codex".to_string();
+            }
+            if basename == "claude" || basename.starts_with("claude.") {
+                return "claude-code".to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
 fn diff_agent_pids(
     processes: &[serde_json::Value],
     prev_pids: &mut HashMap<String, u32>,
@@ -101,11 +154,12 @@ fn diff_agent_pids(
 ) {
     let mut current_pids: HashMap<String, (u32, String)> = HashMap::new();
     for proc in processes {
-        let name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        if name == "claude" || name == "codex" {
+        let raw_name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("");
+        let resolved = resolve_agent_name(raw_name, cmd);
+        if resolved == "claude-code" || resolved == "codex" {
             if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
-                let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                current_pids.insert(name.to_string(), (pid as u32, cmd));
+                current_pids.insert(resolved, (pid as u32, cmd.to_string()));
             }
         }
     }
@@ -193,6 +247,7 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
         .map(|(pid, name, cpu_percent, memory_kb, elapsed_time)| {
             let command = args_map.get(&pid).cloned().unwrap_or_default();
             let listening_ports = ports_map.get(&pid).cloned().unwrap_or_default();
+            let name = resolve_agent_name(&name, &command);
             serde_json::to_value(ProcessEntry {
                 pid, command, name, cpu_percent, memory_kb, elapsed_time, listening_ports,
             })

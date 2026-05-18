@@ -27,7 +27,7 @@ export function DangerBadge({ size = 12 }: { size?: number }) {
               className="inline-flex shrink-0 items-center justify-center leading-none"
               style={{ fontSize: size }}
             >
-              🤘
+              {'\u{1F918}\uFE0F'}
             </span>
           }
         />

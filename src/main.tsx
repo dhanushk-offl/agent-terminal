@@ -30,19 +30,6 @@ async function bootstrap() {
 
   initNavigation()
 
-  // Apply stored theme preference before initial render so layout doesn't
-  // flash the system preference. `initThemeFromStorage` and `applyThemeToDocument`
-  // are lightweight and idempotent.
-  try {
-    const { initThemeFromStorage, applyThemeToDocument, $theme } = await import(
-      '@/modules/stores/$theme'
-    )
-    initThemeFromStorage()
-    applyThemeToDocument($theme.get())
-  } catch {
-    // ignore
-  }
-
   // Notification firing lives entirely in Rust. The bridge just pushes
   // UI state (projects map, active tab, app focus) so the backend can
   // make suppression decisions, plus listens for click events.

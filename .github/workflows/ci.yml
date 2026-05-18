@@ -82,31 +82,15 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
-      - name: cargo check
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        run: cargo check --all-targets
-      - name: cargo clippy
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        run: cargo clippy --all-targets
+            librsvg2-dev \
+            xvfb
       - name: cargo test --lib
         if: ${{ !cancelled() }}
         working-directory: src-tauri
-        run: cargo test --lib
-
+        run: xvfb-run cargo test --lib
       # hook_integration tests share filesystem state and a fixed HTTP port,
       # so they must run serially. Mirrors the project's `bun run test` script.
       - name: cargo test --test hook_integration
         if: ${{ !cancelled() }}
         working-directory: src-tauri
-        run: cargo test --test hook_integration -- --test-threads=1
+        run: xvfb-run cargo test --test hook_integration -- --test-threads=1

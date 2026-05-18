@@ -49,6 +49,8 @@ export type XTermHandle = {
    * escape garbage.
    */
   pasteToPty: (data: string) => void
+  /** Reapplies the current theme to the xterm instance. */
+  applyAppTheme: () => void
 }
 
 type Props = {

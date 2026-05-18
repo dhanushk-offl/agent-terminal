@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/geist-mono";
 
 /* ─── Keyframes ────────────────────────────────────────────── */
 @keyframes blink {
@@ -86,11 +87,16 @@
   --color-status-fg: var(--status-bar-foreground);
   --color-accent-soft: var(--accent-soft);
 
-  /* Fonts */
+  /* Fonts — Linux fallbacks ensure emoji and symbol glyphs render on all
+     distros without affecting macOS. Twemoji is shipped by many distros
+     that don't include Noto Color Emoji; Noto Sans Symbols 2 covers
+     dingbats like ✦ (U+2726). */
   --font-ui:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui,
-    sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Noto Sans",
+    "Noto Sans Symbols 2", "Twemoji", "Noto Color Emoji", system-ui, sans-serif;
+  --font-mono:
+    "Geist Mono", "JetBrains Mono", "Noto Sans Mono", ui-monospace, Menlo,
+    monospace;
 }
 
 /* ─── Light theme ───────────────────────────────────────────── */

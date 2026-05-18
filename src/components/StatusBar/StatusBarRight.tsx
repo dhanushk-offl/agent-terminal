@@ -12,7 +12,7 @@ import {
 import type React from 'react'
 import { parseModelFlag } from '@/components/agent.helpers'
 import { PrItem } from '@/components/StatusBar/PrItem'
-import { ThemeToggle } from '@/components/ui/ThemeToggle'
+import { NotificationToggle } from '@/components/ui/NotificationToggle'
 import {
   Tooltip,
   TooltipContent,
@@ -326,7 +326,6 @@ export function StatusBarRight() {
 
   return (
     <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 overflow-hidden">
-      <ThemeToggle />
       {items.map((item, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static order, no reordering
         <span key={i} className="flex items-center gap-1.5">
@@ -334,6 +333,7 @@ export function StatusBarRight() {
           {item}
         </span>
       ))}
+      <NotificationToggle />
     </div>
   )
 }
