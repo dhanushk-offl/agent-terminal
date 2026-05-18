@@ -55,7 +55,7 @@ export function ThemeToggle() {
                       {...menuTriggerProps}
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'sm' }),
-                        'gap-1.5 px-2.5 font-medium text-[11px] text-muted-foreground',
+                        'group gap-1.5 px-2.5 font-medium text-[11px] text-muted-foreground',
                         menuTriggerProps.className,
                       )}
                       style={{
@@ -73,7 +73,7 @@ export function ThemeToggle() {
                         aria-hidden="true"
                         className={cn(
                           'origin-center opacity-60 transition-transform duration-150',
-                          'data-open:rotate-180',
+                          'group-data-[popup-open]:rotate-180',
                         )}
                       />
                     </span>

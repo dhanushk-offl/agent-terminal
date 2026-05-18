@@ -7,11 +7,7 @@ import { startNotificationsBridge } from '@/modules/notifications/notificationsB
 import { syncNotificationsEnabledToBackend } from '@/modules/notifications/preferences'
 import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
-import {
-  $theme,
-  applyThemeToDocument,
-  initThemeFromStorage,
-} from '@/modules/stores/theme'
+import { initThemeFromStorage } from '@/modules/stores/theme'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@xterm/xterm/css/xterm.css'
@@ -20,10 +16,8 @@ import './index.css'
 import './terminal-surface.css'
 
 async function bootstrap() {
-  // Start MOD event listener before render so no events are missed.
   await startModListener()
 
-  // Debounced CWD write-back: persists tab.lastCwd on every directory change.
   startCwdPersist()
 
   try {
@@ -31,17 +25,11 @@ async function bootstrap() {
     if (saved.length > 0) {
       $projects.set(saved)
     }
-  } catch {
-    // No saved projects — start with empty state.
-  }
+  } catch {}
 
   initNavigation()
   initThemeFromStorage()
-  applyThemeToDocument($theme.get())
 
-  // Notification firing lives entirely in Rust. The bridge just pushes
-  // UI state (projects map, active tab, app focus) so the backend can
-  // make suppression decisions, plus listens for click events.
   startNotificationsBridge()
   syncNotificationsEnabledToBackend()
 
