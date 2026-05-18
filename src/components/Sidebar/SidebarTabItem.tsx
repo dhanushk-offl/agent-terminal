@@ -41,7 +41,8 @@ export function SidebarTabItem({
   const allTabMeta = useStore($tabMeta)
   const isActive =
     activeProjectId === projectId && activeTabsByProject[projectId] === tab.id
-  const tabMeta = allTabMeta[makeTabKey(projectId, tab.id)]
+  const tabKey = makeTabKey(projectId, tab.id)
+  const tabMeta = allTabMeta[tabKey]
   const [renaming, setRenaming] = useState(false)
 
   const {
@@ -142,20 +143,16 @@ export function SidebarTabItem({
              * Right-side indicators, left to right:
              *   DangerBadge → StatusIcon
              *
-             * DangerBadge sits immediately left of the status icon so it reads
-             * as "this agent is running hot" rather than a separate entity.
-             * PR info now lives in the status bar (StatusBarRight → PrItem)
-             * where there's room for a state icon, checks dot, and tooltip.
+             * Recency information (which tabs the user was just in) is
+             * now exclusively a Cmd+P concern. Earlier we surfaced 1..10
+             * rank digits here for ambient awareness; daily-use feedback
+             * found them distracting more than helpful. The header pill
+             * advertises the Cmd+P chord; the palette does the recall.
              */}
             {!renaming &&
               tabMeta?.type === 'agent' &&
               hasDangerFlag(tabMeta.agentCmd) && <DangerBadge size={11} />}
-            {!renaming && (
-              <TabStatusIcon
-                tabId={makeTabKey(projectId, tab.id)}
-                active={isActive}
-              />
-            )}
+            {!renaming && <TabStatusIcon tabId={tabKey} active={isActive} />}
           </button>
         </div>
       </ContextMenuTrigger>

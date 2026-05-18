@@ -68,11 +68,15 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 
 Want support for another agent? [Open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [tell me on X](https://x.com/dani_akash_).
 
+### Find your way back
+`Cmd+P` opens a switcher for your recently used tabs — type a few letters, hit Enter, you're there.
+
 ### Keyboard shortcuts
 - `Ctrl+T` — new tab in the active project
 - `Ctrl+W` — close the active tab
 - `Ctrl+Tab` / `Ctrl+Shift+Tab` — cycle tabs
 - `Ctrl+1` … `Ctrl+9` — jump to project N
+- `Cmd+P` — open the recent-tabs quick-switcher
 
 ---
 

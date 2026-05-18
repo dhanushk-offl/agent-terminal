@@ -8,6 +8,7 @@ import { syncNotificationsEnabledToBackend } from '@/modules/notifications/prefe
 import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { initThemeFromStorage } from '@/modules/stores/theme'
+import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@xterm/xterm/css/xterm.css'
@@ -30,6 +31,13 @@ async function bootstrap() {
   initNavigation()
   initThemeFromStorage()
 
+  // Recency tracker subscribes to navigation; must run after initNavigation
+  // so the first bump captures the project/tab restored from disk.
+  initTabRecencySubscriber()
+
+  // Notification firing lives entirely in Rust. The bridge just pushes
+  // UI state (projects map, active tab, app focus) so the backend can
+  // make suppression decisions, plus listens for click events.
   startNotificationsBridge()
   syncNotificationsEnabledToBackend()
 
