@@ -21,9 +21,6 @@ const STORAGE_KEY = 'agent-terminal:tab-recency'
 const TIMES_KEY = 'agent-terminal:tab-recency-times'
 const MAX_ENTRIES = 100
 
-/** Number of tabs that earn a sidebar rank badge. The palette is uncapped. */
-export const MAX_BADGE_RANK = 10
-
 function readPersistedList(): string[] {
   if (typeof window === 'undefined') return []
   try {
@@ -110,10 +107,4 @@ export function forgetTabRecency(tabKey: string): void {
     const { [tabKey]: _, ...rest } = times
     $tabRecencyTimes.set(rest)
   }
-}
-
-/** 1..MAX_BADGE_RANK if the tab is in the top badge window, else 0. */
-export function getTabRank(tabKey: string): number {
-  const idx = $tabRecency.get().indexOf(tabKey)
-  return idx < 0 || idx >= MAX_BADGE_RANK ? 0 : idx + 1
 }

@@ -35,8 +35,6 @@ import {
   $tabRecencyTimes,
   bumpTabRecency,
   forgetTabRecency,
-  getTabRank,
-  MAX_BADGE_RANK,
 } from '@/modules/stores/$tabRecency'
 
 beforeEach(() => {
@@ -137,34 +135,6 @@ describe('forgetTabRecency', () => {
     bumpTabRecency('p:t1')
     forgetTabRecency('')
     expect($tabRecency.get()).toEqual(['p:t1'])
-  })
-})
-
-/* ---------------------------------------------------------------------------
- * getTabRank
- * -------------------------------------------------------------------------*/
-
-describe('getTabRank', () => {
-  test('returns 0 for an unknown key', () => {
-    expect(getTabRank('p:t1')).toBe(0)
-  })
-
-  test('returns 1 for the most-recently bumped key', () => {
-    bumpTabRecency('p:t1')
-    expect(getTabRank('p:t1')).toBe(1)
-  })
-
-  test('returns 1..MAX_BADGE_RANK for the badge window', () => {
-    for (let i = 1; i <= MAX_BADGE_RANK; i += 1) bumpTabRecency(`p:t${i}`)
-    // Most-recent (t10) is rank 1; t1 is rank MAX_BADGE_RANK.
-    expect(getTabRank(`p:t${MAX_BADGE_RANK}`)).toBe(1)
-    expect(getTabRank('p:t1')).toBe(MAX_BADGE_RANK)
-  })
-
-  test('returns 0 for tabs outside the badge window', () => {
-    for (let i = 1; i <= MAX_BADGE_RANK + 5; i += 1) bumpTabRecency(`p:t${i}`)
-    // The (MAX_BADGE_RANK + 1)th tab from the top is the original first one.
-    expect(getTabRank('p:t1')).toBe(0)
   })
 })
 

@@ -22,7 +22,6 @@ import {
 } from '@/modules/stores/$navigation'
 import { removeTab, renameTab, toggleTabPin } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
-import { $tabRecency, MAX_BADGE_RANK } from '@/modules/stores/$tabRecency'
 import {
   MONO_FONT,
   makeTabKey,
@@ -40,17 +39,10 @@ export function SidebarTabItem({
   const activeProjectId = useStore($activeProjectId)
   const activeTabsByProject = useStore($activeTabId)
   const allTabMeta = useStore($tabMeta)
-  const recency = useStore($tabRecency)
   const isActive =
     activeProjectId === projectId && activeTabsByProject[projectId] === tab.id
   const tabKey = makeTabKey(projectId, tab.id)
   const tabMeta = allTabMeta[tabKey]
-  // Rank shown for the top MAX_BADGE_RANK tabs regardless of pin state —
-  // pinned + recent is a legit combination and the slot lives separately
-  // from the pin slot on the row's right side.
-  const recencyIdx = recency.indexOf(tabKey)
-  const rank =
-    recencyIdx >= 0 && recencyIdx < MAX_BADGE_RANK ? recencyIdx + 1 : 0
   const [renaming, setRenaming] = useState(false)
 
   const {
@@ -149,25 +141,14 @@ export function SidebarTabItem({
 
             {/*
              * Right-side indicators, left to right:
-             *   Rank digit (top 10 only) → DangerBadge → StatusIcon
+             *   DangerBadge → StatusIcon
              *
-             * Rank lives here (not in the left pin slot) so it can coexist
-             * with the pin icon — a pinned tab the user just touched should
-             * still surface as recent. PR info lives in the status bar.
+             * Recency information (which tabs the user was just in) is
+             * now exclusively a Cmd+P concern. Earlier we surfaced 1..10
+             * rank digits here for ambient awareness; daily-use feedback
+             * found them distracting more than helpful. The header pill
+             * advertises the Cmd+P chord; the palette does the recall.
              */}
-            {!renaming && rank > 0 && (
-              <span
-                aria-hidden="true"
-                title={`Recently active (rank ${rank})`}
-                // w-4 (not w-3) leaves room for the two-digit "10" — at
-                // 9.5px JetBrains Mono with tabular-nums, "10" measures
-                // ~11-12px and would sit flush against a 12px slot.
-                className="w-4 shrink-0 select-none text-right tabular-nums opacity-50"
-                style={{ fontFamily: MONO_FONT, fontSize: 9.5 }}
-              >
-                {rank}
-              </span>
-            )}
             {!renaming &&
               tabMeta?.type === 'agent' &&
               hasDangerFlag(tabMeta.agentCmd) && <DangerBadge size={11} />}

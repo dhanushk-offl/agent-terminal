@@ -66,12 +66,7 @@ Always-on context for the focused tab — refreshed every couple of seconds, nev
 Want support for another agent? [Open an issue](https://github.com/DaniAkash/agent-terminal/issues/new) or [tell me on X](https://x.com/dani_akash_).
 
 ### Find your way back
-When you're juggling many projects, it's easy to lose track of which tabs you were just in. Agent Terminal keeps an MRU list of every tab you visit and surfaces it in two ways:
-
-- **Sidebar badges** — the ten most-recently active tabs across the whole workspace get a small `1..10` digit on the right side of their row. Rank 1 is where you just were; rank 10 is the oldest of the recent ten.
-- **`Cmd+P` quick-switcher** — opens a VS Code-style palette with every open tab in recency order, the same rank chips, a `Nm ago` timestamp, and case-insensitive substring search across label + project + cwd. Type a few letters, hit Enter, you're there.
-
-Both share the same recency data and are persisted to local storage, so the ranks still mean something after a quit-and-relaunch.
+When you're juggling many projects, it's easy to lose track of which tabs you were just in. `Cmd+P` opens a VS Code-style quick-switcher with every open tab in recency order, rank chips, a `Nm ago` timestamp, and case-insensitive substring search across label + project + cwd. Type a few letters, hit Enter, you're there. The recency is persisted to local storage so the order still makes sense after a quit-and-relaunch.
 
 ### Keyboard shortcuts
 - `Ctrl+T` — new tab in the active project

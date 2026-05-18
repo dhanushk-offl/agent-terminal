@@ -13,6 +13,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useStore } from '@nanostores/react'
+import { CommandShortcut } from '@/components/ui/command'
 import {
   $activeProjectId,
   $activeTabId,
@@ -76,6 +77,16 @@ export function Sidebar() {
         >
           Workspaces
         </span>
+        {/* Ambient ⌘P hint — advertises the tab switcher. Persistent and
+            dim so the eye stops registering it once learned, but visible
+            enough that a new user discovers the chord without holding any
+            modifier. */}
+        <CommandShortcut
+          className="ml-auto opacity-50"
+          title="Open the tab switcher (⌘P)"
+        >
+          ⌘P
+        </CommandShortcut>
       </div>
 
       {/* Project tree — scrolls vertically; scrollbar hidden, bottom shadow
