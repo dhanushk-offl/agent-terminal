@@ -6,27 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Terminal</title>
     <script>
-      (function () {
+      (() => {
+        var KEY, raw, legacy, theme
         try {
-          var KEY = 'agent-terminal:theme';
-          var raw = localStorage.getItem(KEY);
+          KEY = 'agent-terminal:theme'
+          raw = localStorage.getItem(KEY)
           if (raw === null) {
-            var legacy = localStorage.getItem('theme');
+            legacy = localStorage.getItem('theme')
             if (legacy === 'light' || legacy === 'dark') {
-              raw = legacy;
-              localStorage.setItem(KEY, legacy);
-              localStorage.removeItem('theme');
+              raw = legacy
+              localStorage.setItem(KEY, legacy)
+              localStorage.removeItem('theme')
             }
           }
-          var theme =
+          theme =
             raw === 'light' || raw === 'dark'
               ? raw
               : window.matchMedia('(prefers-color-scheme: dark)').matches
                 ? 'dark'
-                : 'light';
-          document.documentElement.setAttribute('data-theme', theme);
-        } catch (e) {}
-      })();
+                : 'light'
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (_e) {}
+      })()
     </script>
   </head>
 
