@@ -49,14 +49,6 @@ export type XTermHandle = {
    * escape garbage.
    */
   pasteToPty: (data: string) => void
-  /**
-   * Recomputes the terminal palette from the document theme and repaints
-   * the visible buffer. Used when the user flips light/dark/system so
-   * any already-rendered CLI output picks up the new colors immediately.
-   * For agent tabs, it also nudges the PTY with a same-size resize so the
-   * CLI redraws its own prompt/input UI instead of keeping stale styling.
-   */
-  applyAppTheme: () => void
 }
 
 type Props = {
@@ -93,11 +85,11 @@ function getTerminalTheme(
 
 function applyTerminalTheme(
   term: Terminal,
-  prefersDark: boolean,
+  darkMq: MediaQueryList,
   isAgent: boolean,
 ) {
   const docTheme = document.documentElement.getAttribute('data-theme')
-  term.options.theme = getTerminalTheme(docTheme, prefersDark, isAgent)
+  term.options.theme = getTerminalTheme(docTheme, darkMq.matches, isAgent)
   if (term.rows > 0) term.refresh(0, term.rows - 1)
 }
 
@@ -122,7 +114,6 @@ export const XTermTerminal = React.memo(function XTermTerminal({
   const onDataRef = useRef(onData)
   const onResizeRef = useRef(onResize)
   const isAgentRef = useRef(isAgent)
-  const prevIsAgentRef = useRef(isAgent)
   useEffect(() => {
     onReadyRef.current = onReady
     onDataRef.current = onData
@@ -139,17 +130,17 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     let webglAddon: WebglAddon | null = null
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
-    const isAgentSurface = isAgentRef.current
 
-    // xterm is fully synchronous — no WASM init required.
-    // Read $fontSize.get() (not the closure-captured `fontSize`) so the
-    // mount-once effect picks up any persisted value at construction time.
+    // allowTransparency must be true at construction time for agent tabs
+    // whose LIGHT_AGENT_THEME uses a translucent background over the CSS
+    // gradient. xterm does not support updating this option post-construction,
+    // so we always enable it — non-agent tabs use opaque backgrounds anyway.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
       theme: getTerminalTheme(
         document.documentElement.getAttribute('data-theme'),
         darkMq.matches,
-        isAgentSurface,
+        isAgentRef.current,
       ),
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: $fontSize.get(),
@@ -157,7 +148,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       cursorBlink: true,
       cursorStyle: 'block',
       scrollback: 5000,
-      allowTransparency: isAgentSurface,
+      allowTransparency: true,
     })
 
     const fitAddon = new FitAddon()
@@ -213,10 +204,19 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     // Swap theme instantly when the OS colour scheme changes.
     const onColorSchemeChange = () => {
-      if (!disposed)
-        applyTerminalTheme(term, darkMq.matches, isAgentRef.current)
+      if (!disposed) applyTerminalTheme(term, darkMq, isAgentRef.current)
     }
     darkMq.addEventListener('change', onColorSchemeChange)
+
+    // Swap theme when the user explicitly changes light/dark/system via the
+    // status bar toggle — the MutationObserver watches data-theme on <html>.
+    const mo = new MutationObserver(() => {
+      if (!disposed) applyTerminalTheme(term, darkMq, isAgentRef.current)
+    })
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
 
     // Drive fit() via ResizeObserver — fires after layout, no debounce needed.
     // term.onResize notifies the PTY of the new cols/rows via the onResize prop.
@@ -274,16 +274,12 @@ export const XTermTerminal = React.memo(function XTermTerminal({
         const payload = wrap ? `\x1b[200~${data}\x1b[201~` : data
         onDataRef.current(payload)
       },
-      applyAppTheme: () => {
-        const isAgent = isAgentRef.current
-        applyTerminalTheme(term, darkMq.matches, isAgent)
-        if (isAgent) onResizeRef.current(term.cols, term.rows)
-      },
     })
 
     return () => {
       disposed = true
       darkMq.removeEventListener('change', onColorSchemeChange)
+      mo.disconnect()
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()
       dataDisposable.dispose()
@@ -309,23 +305,6 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     term.options.fontSize = fontSize
     requestAnimationFrame(() => fit.fit())
   }, [fontSize])
-
-  // If a tab is reclassified as an agent after mount, update the terminal
-  // surface immediately so transparency and theme match the new role.
-  useEffect(() => {
-    const term = termRef.current
-    if (!term) return
-    if (prevIsAgentRef.current === isAgent) return
-    prevIsAgentRef.current = isAgent
-    const prefersDark = window.matchMedia(
-      '(prefers-color-scheme: dark)',
-    ).matches
-    term.options.allowTransparency = isAgent
-    applyTerminalTheme(term, prefersDark, isAgent)
-    if (isAgent && term.cols > 0 && term.rows > 0) {
-      onResizeRef.current(term.cols, term.rows)
-    }
-  }, [isAgent])
 
   return (
     <div ref={containerRef} className={className ?? 'h-full min-h-0 w-full'} />

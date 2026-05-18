@@ -5,6 +5,29 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Terminal</title>
+    <script>
+      (function () {
+        try {
+          var KEY = 'agent-terminal:theme';
+          var raw = localStorage.getItem(KEY);
+          if (raw === null) {
+            var legacy = localStorage.getItem('theme');
+            if (legacy === 'light' || legacy === 'dark') {
+              raw = legacy;
+              localStorage.setItem(KEY, legacy);
+              localStorage.removeItem('theme');
+            }
+          }
+          var theme =
+            raw === 'light' || raw === 'dark'
+              ? raw
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
   <body>
