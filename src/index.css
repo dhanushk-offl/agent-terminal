@@ -293,6 +293,27 @@
   --term-color-15: #ffffff;
 }
 
+/* ─── Fallback for IIFE failure ────────────────────────────────────────────
+   The inline IIFE in index.html always sets data-theme on cold load, but
+   its try/catch swallows errors (broken localStorage / sandboxed runtime).
+   If that ever happens, dark-OS users would see the light defaults. This
+   media query only fires when data-theme is absent and the OS prefers
+   dark — explicit user choice via the toggle still wins because the
+   :root[data-theme="dark"] selector above has higher specificity. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: #0e0f10;
+    --foreground: rgba(230, 232, 235, 0.92);
+    --sidebar-background: #141517;
+    --sidebar-foreground: rgba(255, 255, 255, 0.55);
+    --sidebar-foreground-strong: rgba(255, 255, 255, 0.9);
+    --sidebar-hover: rgba(255, 255, 255, 0.04);
+    --sidebar-active: rgba(255, 255, 255, 0.07);
+    --terminal-background: #0e0f10;
+    --terminal-foreground: rgba(230, 232, 235, 0.92);
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

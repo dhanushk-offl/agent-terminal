@@ -191,14 +191,14 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       webglAddon = null
     }
 
-    // Swap theme instantly when the OS colour scheme changes.
-    const onColorSchemeChange = () => {
-      if (!disposed) applyTerminalTheme(term, darkMq)
-    }
-    darkMq.addEventListener('change', onColorSchemeChange)
-
-    // Swap theme when the user explicitly changes light/dark/system via the
-    // status bar toggle — the MutationObserver watches data-theme on <html>.
+    // Single source of theme updates: the MutationObserver watches
+    // `data-theme` on <html>. Both flows route through it —
+    //   1. User flips the toggle → $theme.setTheme → applyThemeToDocument
+    //      → setAttribute → MutationObserver fires here.
+    //   2. OS preference changes while in 'system' → $theme's matchMedia
+    //      subscription → applyThemeToDocument → same chain.
+    // The previous per-pane matchMedia listener was redundant with the
+    // OS-change path above and caused a double refresh per change.
     const mo = new MutationObserver(() => {
       if (!disposed) applyTerminalTheme(term, darkMq)
     })
@@ -267,7 +267,6 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     return () => {
       disposed = true
-      darkMq.removeEventListener('change', onColorSchemeChange)
       mo.disconnect()
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()

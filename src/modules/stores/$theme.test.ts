@@ -73,7 +73,7 @@ beforeEach(() => {
 })
 
 describe('theme store', () => {
-  test('setTheme persisted explicit dark and sets data-theme on document', () => {
+  test('setTheme persists explicit dark and sets data-theme on document', () => {
     setTheme('dark')
 
     expect($theme.get()).toBe('dark')

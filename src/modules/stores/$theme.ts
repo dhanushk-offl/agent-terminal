@@ -27,13 +27,19 @@ let systemListener: ((e: MediaQueryListEvent) => void) | null = null
 
 /**
  * Wires an OS prefers-color-scheme listener that re-applies the theme
- * whenever the current selection is 'system'. Idempotent. Guarded for
- * runtimes that define `window` but not `matchMedia` (bun:test, jsdom-
- * minimal, partial SSR), which is why this lives in a function rather
- * than at module top-level — running on import threw in CI.
+ * whenever the current selection is 'system'. Safe to call multiple
+ * times: each call disposes the prior subscription first and re-binds
+ * to the current `window.matchMedia` instance. Without that, a fresh
+ * `window` stub in tests (or a hot-reload-replaced MediaQueryList)
+ * would leave us holding a dead reference.
+ *
+ * Guarded for runtimes that define `window` but not `matchMedia`
+ * (bun:test, jsdom-minimal, partial SSR), which is also why this lives
+ * in a function rather than at module top-level — running on import
+ * threw in CI.
  */
 function subscribeSystemThemeChanges() {
-  if (systemListener) return
+  disposeThemeSubscriptions()
   if (
     typeof window === 'undefined' ||
     typeof window.matchMedia !== 'function'
@@ -96,6 +102,10 @@ export function applyThemeToDocument(t: Theme) {
   if (typeof document === 'undefined') return
   const html = document.documentElement
   const resolved = t === 'system' ? resolveSystemTheme() : t
+  // Short-circuit on no-op writes — setAttribute still fires a
+  // MutationRecord even when the value is unchanged, and every mounted
+  // xterm's MutationObserver would then call term.refresh for nothing.
+  if (html.getAttribute('data-theme') === resolved) return
   html.setAttribute('data-theme', resolved)
 }
 
