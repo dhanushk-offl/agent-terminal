@@ -68,28 +68,22 @@ type Props = {
 import { handleKeyEvent } from '@/components/XTermTerminal/xterm-terminal.keys'
 import {
   DARK_THEME,
-  LIGHT_AGENT_THEME,
   LIGHT_THEME,
 } from '@/components/XTermTerminal/xterm-terminal.themes'
 
-function getTerminalTheme(
-  docTheme: string | null,
-  prefersDark: boolean,
-  isAgent: boolean,
-) {
+// The IIFE in `index.html` always sets `data-theme` to the resolved
+// preference, so we read it as the source of truth and fall back to the
+// OS media query only as a defensive belt-and-braces (e.g. if the IIFE
+// silently failed).
+function getTerminalTheme(docTheme: string | null, prefersDark: boolean) {
   const useDark =
     docTheme === 'dark' ? true : docTheme === 'light' ? false : prefersDark
-  if (useDark) return DARK_THEME
-  return isAgent ? LIGHT_AGENT_THEME : LIGHT_THEME
+  return useDark ? DARK_THEME : LIGHT_THEME
 }
 
-function applyTerminalTheme(
-  term: Terminal,
-  darkMq: MediaQueryList,
-  isAgent: boolean,
-) {
+function applyTerminalTheme(term: Terminal, darkMq: MediaQueryList) {
   const docTheme = document.documentElement.getAttribute('data-theme')
-  term.options.theme = getTerminalTheme(docTheme, darkMq.matches, isAgent)
+  term.options.theme = getTerminalTheme(docTheme, darkMq.matches)
   if (term.rows > 0) term.refresh(0, term.rows - 1)
 }
 
@@ -131,16 +125,11 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
-    // allowTransparency must be true at construction time for agent tabs
-    // whose LIGHT_AGENT_THEME uses a translucent background over the CSS
-    // gradient. xterm does not support updating this option post-construction,
-    // so we always enable it — non-agent tabs use opaque backgrounds anyway.
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
       theme: getTerminalTheme(
         document.documentElement.getAttribute('data-theme'),
         darkMq.matches,
-        isAgentRef.current,
       ),
       fontFamily: '"Geist Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: $fontSize.get(),
@@ -148,7 +137,7 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       cursorBlink: true,
       cursorStyle: 'block',
       scrollback: 5000,
-      allowTransparency: true,
+      allowTransparency: false,
     })
 
     const fitAddon = new FitAddon()
@@ -204,14 +193,14 @@ export const XTermTerminal = React.memo(function XTermTerminal({
 
     // Swap theme instantly when the OS colour scheme changes.
     const onColorSchemeChange = () => {
-      if (!disposed) applyTerminalTheme(term, darkMq, isAgentRef.current)
+      if (!disposed) applyTerminalTheme(term, darkMq)
     }
     darkMq.addEventListener('change', onColorSchemeChange)
 
     // Swap theme when the user explicitly changes light/dark/system via the
     // status bar toggle — the MutationObserver watches data-theme on <html>.
     const mo = new MutationObserver(() => {
-      if (!disposed) applyTerminalTheme(term, darkMq, isAgentRef.current)
+      if (!disposed) applyTerminalTheme(term, darkMq)
     })
     mo.observe(document.documentElement, {
       attributes: true,
