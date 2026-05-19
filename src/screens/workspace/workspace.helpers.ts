@@ -1,4 +1,5 @@
-export const MONO_FONT = '"JetBrains Mono", ui-monospace, Menlo, monospace'
+export const MONO_FONT =
+  '"Geist Mono", "JetBrains Mono", "Noto Sans Mono", ui-monospace, Menlo, monospace'
 
 export function makeTabKey(projectId: string, tabId: string): string {
   return `${projectId}:${tabId}`

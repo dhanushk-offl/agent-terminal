@@ -30,7 +30,7 @@ impl Mod for ClaudeCodeMod {
     }
 
     fn on_agent_detected(&mut self, agent: &str, _cwd: &str, cmd: &str, ctx: &ModContext) {
-        if agent != "claude" {
+        if agent != "claude-code" {
             return;
         }
         let display_name = config_for_agent_id(AGENT_ID)
@@ -49,7 +49,7 @@ impl Mod for ClaudeCodeMod {
     }
 
     fn on_agent_cleared(&mut self, agent: &str, ctx: &ModContext) {
-        if agent != "claude" {
+        if agent != "claude-code" {
             return;
         }
         ctx.emit("claude_code", "tab_type_changed", serde_json::json!({ "type": "shell" }));

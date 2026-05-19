@@ -49,6 +49,8 @@ export type XTermHandle = {
    * escape garbage.
    */
   pasteToPty: (data: string) => void
+  /** Reapplies the current theme to the xterm instance. */
+  applyAppTheme: () => void
 }
 
 type Props = {
@@ -191,6 +193,13 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       webglAddon = null
     }
 
+    // Swap theme when the OS colour scheme changes or when the user sets
+    // an explicit app theme via the data-theme attribute. MutationObserver
+    // watches the root for `data-theme` changes (light/dark/system).
+    const onColorSchemeChange = (e: MediaQueryListEvent) => {
+      if (!disposed) term.options.theme = e.matches ? DARK_THEME : LIGHT_THEME
+    }
+    darkMq.addEventListener('change', onColorSchemeChange)
     // Single source of theme updates: the MutationObserver watches
     // `data-theme` on <html>. Both flows route through it —
     //   1. User flips the toggle → $theme.setTheme → applyThemeToDocument
@@ -263,10 +272,22 @@ export const XTermTerminal = React.memo(function XTermTerminal({
         const payload = wrap ? `\x1b[200~${data}\x1b[201~` : data
         onDataRef.current(payload)
       },
+      applyAppTheme: () => {
+        const docTheme = document.documentElement.getAttribute('data-theme')
+        const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
+        const useDark =
+          docTheme === 'dark'
+            ? true
+            : docTheme === 'light'
+              ? false
+              : darkMq.matches
+        term.options.theme = useDark ? DARK_THEME : LIGHT_THEME
+      },
     })
 
     return () => {
       disposed = true
+      darkMq.removeEventListener('change', onColorSchemeChange)
       mo.disconnect()
       if (fitTimer !== null) clearTimeout(fitTimer)
       resizeObserver?.disconnect()

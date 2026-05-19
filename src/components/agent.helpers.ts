@@ -61,11 +61,36 @@ export function hasDangerFlag(agentCmd: string | undefined): boolean {
 }
 
 /**
- * Parses the `--model <name>` flag from an agent command string.
- * Returns null when the flag is absent.
+ * Parses the `--model <name>` or `-m <name>` flag from an agent command string.
+ * Returns null when neither flag is present.
  */
 export function parseModelFlag(agentCmd: string | undefined): string | null {
   if (!agentCmd) return null
-  const match = agentCmd.match(/--model\s+(\S+)/)
+  const match = agentCmd.match(/(?:--model|-m)\s+(\S+)/)
   return match?.[1] ?? null
+}
+
+/**
+ * Resolves the model name to display for a given agent.
+ *
+ * Priority order:
+ * 1. Hook-provided model (`agentModel`) — the most authoritative source, set
+ *    by `model_changed` events from AgentTurnMod when the agent's hook payload
+ *    includes a `model` field. Always reflects the current in-session model.
+ * 2. Command-line flag (`--model` or `-m`) from `agentCmd`.
+ * 3. Returns null when no information is available.
+ *
+ * We intentionally do NOT hardcode default models (e.g. "sonnet", "o4-mini")
+ * because the agent may be using a different model selected via its own config
+ * or an in-session switch. Showing a wrong default is worse than showing nothing.
+ */
+export function resolveModel(
+  agentCmd: string | undefined,
+  _agentId: string | undefined,
+  agentModel: string | undefined,
+): string | null {
+  if (agentModel) return agentModel
+  const flagged = parseModelFlag(agentCmd)
+  if (flagged) return flagged
+  return null
 }

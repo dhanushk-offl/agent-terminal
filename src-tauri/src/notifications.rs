@@ -10,7 +10,9 @@
 //! | Profile | Backend | Banners | Click callbacks |
 //! |---|---|---|---|
 //! | `cfg(debug_assertions)` (`tauri:dev`) | `tauri-plugin-notification` | ✅ visible | ❌ none — banners are debugging-only |
-//! | `cfg(not(debug_assertions))` (`tauri:build`) | `user-notify` (UNUserNotificationCenter on macOS) | ✅ visible | ✅ real per-notification callbacks via UNUserNotificationCenterDelegate |
+//! | `cfg(not(debug_assertions), target_os = "macos")` | `user-notify` (UNUserNotificationCenter) | ✅ visible | ✅ real per-notification callbacks via UNUserNotificationCenterDelegate |
+//! | `cfg(not(debug_assertions), target_os = "linux")` | `notify-rust` | ✅ visible | ✅ click via `"default"` action + `on_closure` |
+//! | `cfg(not(debug_assertions), target_os = "windows")` | `tauri-plugin-notification` | ✅ visible | ❌ none — best-effort fallback for Windows release builds |
 //!
 //! **Why split:** Tauri's notification plugin has zero click-handling
 //! capability on desktop (verified via plugin source + docs + maintainer
@@ -79,13 +81,19 @@ pub struct ProjectInfo {
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 pub struct NotificationService {
+    #[cfg(any(
+        debug_assertions,
+        all(not(debug_assertions), target_os = "macos"),
+        all(not(debug_assertions), target_os = "windows"),
+        all(not(debug_assertions), target_os = "linux")
+    ))]
     app: AppHandle,
     inner: Mutex<Inner>,
     /// Release-mode only: handle to the user-notify NotificationManager. Held
     /// for its lifetime so the registered click callback stays alive.
     /// Wrapped in Mutex<Option<...>> so it can be initialized lazily after
     /// the service is wrapped in Arc.
-    #[cfg(not(debug_assertions))]
+    #[cfg(all(not(debug_assertions), target_os = "macos"))]
     manager: Mutex<Option<std::sync::Arc<dyn user_notify::NotificationManager>>>,
 }
 
@@ -102,6 +110,12 @@ struct Inner {
 impl NotificationService {
     pub fn new(app: AppHandle) -> Arc<Self> {
         let svc = Arc::new(Self {
+            #[cfg(any(
+                debug_assertions,
+                all(not(debug_assertions), target_os = "macos"),
+                all(not(debug_assertions), target_os = "windows"),
+                all(not(debug_assertions), target_os = "linux")
+            ))]
             app,
             inner: Mutex::new(Inner {
                 projects: HashMap::new(),
@@ -112,7 +126,7 @@ impl NotificationService {
                 permission_granted: false,
                 enabled: true,
             }),
-            #[cfg(not(debug_assertions))]
+            #[cfg(all(not(debug_assertions), target_os = "macos"))]
             manager: Mutex::new(None),
         });
         backend::init(&svc);
@@ -430,7 +444,7 @@ mod backend {
     }
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(all(not(debug_assertions), target_os = "macos"))]
 mod backend {
     //! Release backend — `user-notify` wrapping native UNUserNotificationCenter.
     //!
@@ -601,6 +615,128 @@ mod backend {
             Ok(true) => super::PermissionOutcome::Granted,
             Ok(false) => super::PermissionOutcome::Denied,
             Err(_) => super::PermissionOutcome::NotReady,
+        }
+    }
+}
+
+#[cfg(all(not(debug_assertions), target_os = "linux"))]
+mod backend {
+    //! Linux release backend — `notify-rust` (libnotify / DBus).
+    //!
+    //! Provides visible desktop banners on Linux desktops. Notifications
+    //! include a `"default"` action so that clicking the banner emits a
+    //! `notification:click` event to the frontend (desktop-environment
+    //! dependent — some DEs may swallow actions).
+
+    use super::{FirePayload, NotificationService};
+    use std::sync::Arc;
+    use notify_rust::{Notification, Timeout};
+    use tauri::{Emitter, Manager};
+
+    pub fn init(_svc: &Arc<NotificationService>) {
+        eprintln!("[notifications] linux release backend (notify-rust) initialized");
+    }
+
+    pub async fn fire(svc: &Arc<NotificationService>, payload: FirePayload) {
+        let title = payload.title;
+        let body = payload.body;
+        let composite_id = payload.composite_tab_id.clone();
+        let project_id = payload.project_id.clone();
+        let app = svc.app.clone();
+
+        match Notification::new()
+            .summary(&title)
+            .body(&body)
+            .timeout(Timeout::Default)
+            .action("default", "Open")
+            .show_async()
+        {
+            Ok(handle) => {
+                handle.on_closure(|reason| {
+                    eprintln!("[notifications] notification closed: {reason:?}");
+                    if !matches!(reason, notify_rust::CloseReason::Action(_)) {
+                        return;
+                    }
+                    eprintln!("[notifications] action clicked — focusing window and emitting notification:click");
+                    if let Some(webview) = app.get_webview_window("main") {
+                        let _ = webview.show();
+                        let _ = webview.unminimize();
+                        let _ = webview.set_focus();
+                    }
+                    let _ = app.emit(
+                        "notification:click",
+                        serde_json::json!({
+                            "project_id": project_id,
+                            "tab_id": composite_id,
+                        }),
+                    );
+                });
+            }
+            Err(e) => eprintln!("[notifications] notify-rust send failed: {e}"),
+        }
+    }
+
+    pub fn cancel(_svc: &NotificationService, _composite_tab_id: &str) {
+        // notify-rust/libnotify does not provide a reliable cross-DE API for
+        // removing delivered notifications by id. No-op for now.
+    }
+
+    pub async fn ensure_permission(_svc: &NotificationService) -> super::PermissionOutcome {
+        // Desktop Linux does not have an explicit notification permission
+        // model like macOS — assume granted and let DEs filter if needed.
+        super::PermissionOutcome::Granted
+    }
+}
+
+#[cfg(all(not(debug_assertions), target_os = "windows"))]
+mod backend {
+    //! Windows release backend — `tauri-plugin-notification`.
+    //!
+    //! Best-effort desktop notifications for Windows release builds.
+    //! The plugin provides visible banners, but like dev mode it does not
+    //! offer per-notification click callbacks.
+
+    use super::{FirePayload, NotificationService};
+    use std::sync::Arc;
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+
+    pub fn init(_svc: &Arc<NotificationService>) {
+        eprintln!(
+            "[notifications] windows release backend (tauri-plugin-notification) initialized"
+        );
+    }
+
+    pub async fn fire(svc: &Arc<NotificationService>, payload: FirePayload) {
+        eprintln!(
+            "[notifications] (windows) firing: tab={} state={:?} title={:?} body={:?}",
+            payload.composite_tab_id, payload.state, payload.title, payload.body,
+        );
+        if let Err(e) = svc
+            .app
+            .notification()
+            .builder()
+            .title(&payload.title)
+            .body(&payload.body)
+            .sound(payload.state.sound())
+            .show()
+        {
+            eprintln!("[notifications] (windows) show failed: {e}");
+        }
+    }
+
+    pub fn cancel(_svc: &NotificationService, composite_tab_id: &str) {
+        eprintln!("[notifications] (windows) cancel: tab={composite_tab_id}");
+    }
+
+    pub async fn ensure_permission(svc: &NotificationService) -> super::PermissionOutcome {
+        let plugin = svc.app.notification();
+        let granted = matches!(plugin.permission_state(), Ok(PermissionState::Granted))
+            || matches!(plugin.request_permission(), Ok(PermissionState::Granted));
+        eprintln!("[notifications] (windows) permission granted = {granted}");
+        if granted {
+            super::PermissionOutcome::Granted
+        } else {
+            super::PermissionOutcome::Denied
         }
     }
 }

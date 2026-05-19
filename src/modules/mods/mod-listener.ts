@@ -105,6 +105,7 @@ function dispatch({
           // Clear hook-driven state when the agent process exits.
           agentState: undefined,
           agentMessage: undefined,
+          agentModel: undefined,
         })
       } else {
         // agentDisplayName comes from the per-agent mod (which sources it
@@ -126,10 +127,17 @@ function dispatch({
     case 'process_info': {
       const { processes } = data as { processes: ProcessInfo[] }
       const ports = processes.flatMap((p) => p.listeningPorts ?? [])
-      updateTabMeta(tabId, {
+      const patch: Partial<import('@/modules/stores/$tabMeta').TabMeta> = {
         processes,
         listeningPorts: [...new Set(ports)],
-      })
+      }
+      const agentProc = processes.find(
+        (p) => p.name === 'claude-code' || p.name === 'codex',
+      )
+      if (agentProc) {
+        patch.agentCmd = agentProc.command
+      }
+      updateTabMeta(tabId, patch)
       break
     }
     case 'listening_ports': {
@@ -146,6 +154,11 @@ function dispatch({
         agentState: state,
         agentMessage: message ?? undefined,
       })
+      break
+    }
+    case 'model_changed': {
+      const { model } = data as { model: string }
+      updateTabMeta(tabId, { agentModel: model })
       break
     }
     case 'closed': {

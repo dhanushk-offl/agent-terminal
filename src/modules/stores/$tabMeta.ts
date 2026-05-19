@@ -124,6 +124,13 @@ export type TabMeta = {
    * `completed`: the last assistant message (truncated to ~200 chars).
    */
   agentMessage?: string
+  /**
+   * Model name reported by the agent via hook events (e.g. "sonnet", "opus",
+   * "o4-mini"). Takes priority over command-line flag parsing in
+   * `resolveModel()`. Updated on every hook event that includes a model
+   * field; cleared when the agent process exits.
+   */
+  agentModel?: string
 }
 
 const defaultMeta: TabMeta = { status: 'idle', type: 'shell' }

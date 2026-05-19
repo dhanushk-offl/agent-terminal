@@ -51,6 +51,11 @@ export const TerminalPane = React.memo(function TerminalPane({
   useEffect(() => {
     if (isActive) {
       handleRef.current?.focus()
+      // Reapply theme when the terminal becomes active to recover from
+      // any program-driven palette changes (some CLI apps may alter
+      // terminal colors or switch alternate screens). This ensures the
+      // app's chosen theme remains visible.
+      if (handleRef.current?.applyAppTheme) handleRef.current.applyAppTheme()
     }
   }, [isActive])
 

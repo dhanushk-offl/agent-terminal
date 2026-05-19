@@ -119,6 +119,18 @@ export const Mod = {
   Ctrl: 'ctrl',
   Alt: 'alt',
   Shift: 'shift',
+  /**
+   * Primary modifier for platform-adaptive bindings. On macOS use `meta` (⌘),
+   * on other platforms use `ctrl` so keyboard shortcuts feel native.
+   */
+  get Primary() {
+    try {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+      return /Mac|Macintosh|Darwin/.test(ua) ? 'meta' : 'ctrl'
+    } catch {
+      return 'ctrl'
+    }
+  },
 } as const
 
 export type ModName = (typeof Mod)[keyof typeof Mod]

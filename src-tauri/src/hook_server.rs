@@ -45,6 +45,11 @@ pub struct HookPayload {
     /// description of what the agent wants to do (typically a shell command).
     /// Used as the awaiting-badge tooltip.
     pub prompt: Option<String>,
+    /// Model name sent by the agent (e.g. `"sonnet"`, `"opus"`, `"o4-mini"`).
+    /// Currently not sent by Claude Code or Codex hooks, but included so the
+    /// pipeline can forward it if and when agents start providing it.
+    /// `None` when the hook payload does not include a model field.
+    pub model: Option<String>,
 }
 
 /// Starts the hook HTTP server in a background task.

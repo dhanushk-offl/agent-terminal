@@ -53,8 +53,8 @@ export const DARK_THEME: ITheme = {
 
 export const LIGHT_THEME: ITheme = {
   background: '#ffffff', // matches --terminal-background (light)
-  foreground: '#333333',
-  cursor: '#333333',
+  foreground: '#111827',
+  cursor: '#111827',
   cursorAccent: '#ffffff',
   selectionBackground: '#add6ff',
   selectionForeground: '#000000',
@@ -66,13 +66,13 @@ export const LIGHT_THEME: ITheme = {
   blue: '#0451a5',
   magenta: '#bc05bc',
   cyan: '#0598bc',
-  white: '#555555',
-  brightBlack: '#666666',
-  brightRed: '#cd3131',
-  brightGreen: '#14ce14',
-  brightYellow: '#b5ba00',
-  brightBlue: '#0451a5',
-  brightMagenta: '#bc05bc',
-  brightCyan: '#0598bc',
-  brightWhite: '#a5a5a5',
+  white: '#333333',
+  brightBlack: '#444444',
+  brightRed: '#b22222',
+  brightGreen: '#0aa000',
+  brightYellow: '#7f7f00',
+  brightBlue: '#003a8c',
+  brightMagenta: '#990099',
+  brightCyan: '#007f99',
+  brightWhite: '#4a4a4a',
 }

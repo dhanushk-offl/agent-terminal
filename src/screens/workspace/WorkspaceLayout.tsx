@@ -115,18 +115,18 @@ export function WorkspaceLayout() {
   // all key events while the terminal has focus.
   const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
 
-  // ⌘T — new tab in the active project
+  // Primary+T — new tab in the active project (⌘ on macOS, Ctrl elsewhere)
   useHotkeys(
-    `${Mod.Meta}+${Keys.T}`,
+    `${Mod.Primary}+${Keys.T}`,
     () => {
       openNewTabInProject($activeProjectId.get())
     },
     hotkeyOpts,
   )
 
-  // ⌘W — close the active tab (pinned tabs are protected)
+  // Primary+W — close the active tab (pinned tabs are protected)
   useHotkeys(
-    `${Mod.Meta}+${Keys.W}`,
+    `${Mod.Primary}+${Keys.W}`,
     () => {
       const projectId = $activeProjectId.get()
       const tabId = $activeTabId.get()[projectId] ?? ''
@@ -146,7 +146,7 @@ export function WorkspaceLayout() {
   // readline binding — `Tab` itself is shell-bound but `Ctrl+Tab` isn't.
   useHotkeys(
     [
-      `${Mod.Meta}+${Mod.Shift}+${Keys.BracketRight}`,
+      `${Mod.Primary}+${Mod.Shift}+${Keys.BracketRight}`,
       `${Mod.Ctrl}+${Keys.Tab}`,
     ],
     () => {
@@ -164,7 +164,7 @@ export function WorkspaceLayout() {
   // ⌘⇧[ / Ctrl+Shift+Tab — previous tab. Symmetric with next-tab above.
   useHotkeys(
     [
-      `${Mod.Meta}+${Mod.Shift}+${Keys.BracketLeft}`,
+      `${Mod.Primary}+${Mod.Shift}+${Keys.BracketLeft}`,
       `${Mod.Ctrl}+${Mod.Shift}+${Keys.Tab}`,
     ],
     () => {
@@ -186,15 +186,15 @@ export function WorkspaceLayout() {
   // is via Cmd+Shift+]/[ cycling. Projects beyond 9 have no shortcut.
   useHotkeys(
     [
-      `${Mod.Meta}+${Keys.Digit1}`,
-      `${Mod.Meta}+${Keys.Digit2}`,
-      `${Mod.Meta}+${Keys.Digit3}`,
-      `${Mod.Meta}+${Keys.Digit4}`,
-      `${Mod.Meta}+${Keys.Digit5}`,
-      `${Mod.Meta}+${Keys.Digit6}`,
-      `${Mod.Meta}+${Keys.Digit7}`,
-      `${Mod.Meta}+${Keys.Digit8}`,
-      `${Mod.Meta}+${Keys.Digit9}`,
+      `${Mod.Primary}+${Keys.Digit1}`,
+      `${Mod.Primary}+${Keys.Digit2}`,
+      `${Mod.Primary}+${Keys.Digit3}`,
+      `${Mod.Primary}+${Keys.Digit4}`,
+      `${Mod.Primary}+${Keys.Digit5}`,
+      `${Mod.Primary}+${Keys.Digit6}`,
+      `${Mod.Primary}+${Keys.Digit7}`,
+      `${Mod.Primary}+${Keys.Digit8}`,
+      `${Mod.Primary}+${Keys.Digit9}`,
     ],
     (e) => {
       const n = Number.parseInt(e.key, 10) - 1
@@ -214,32 +214,39 @@ export function WorkspaceLayout() {
   // presses use the same physical key (event.code "Equal") and only
   // differ by the shift modifier.
   useHotkeys(
-    [`${Mod.Meta}+${Keys.Equal}`, `${Mod.Meta}+${Mod.Shift}+${Keys.Equal}`],
+    [
+      `${Mod.Primary}+${Keys.Equal}`,
+      `${Mod.Primary}+${Mod.Shift}+${Keys.Equal}`,
+    ],
     () => increaseFontSize(),
     hotkeyOpts,
   )
   // ⌘- — decrease font size
-  useHotkeys(`${Mod.Meta}+${Keys.Minus}`, () => decreaseFontSize(), hotkeyOpts)
-  // ⌘0 — reset font size to default
-  useHotkeys(`${Mod.Meta}+${Keys.Digit0}`, () => resetFontSize(), hotkeyOpts)
+  useHotkeys(
+    `${Mod.Primary}+${Keys.Minus}`,
+    () => decreaseFontSize(),
+    hotkeyOpts,
+  )
+  // Primary+0 — reset font size to default
+  useHotkeys(`${Mod.Primary}+${Keys.Digit0}`, () => resetFontSize(), hotkeyOpts)
 
   // ⌘K — clear screen + scrollback in the active terminal
   useHotkeys(
-    `${Mod.Meta}+${Keys.K}`,
+    `${Mod.Primary}+${Keys.K}`,
     () => getActiveTerminalHandle()?.clear(),
     hotkeyOpts,
   )
 
   // ⌘A — select all in the active terminal
   useHotkeys(
-    `${Mod.Meta}+${Keys.A}`,
+    `${Mod.Primary}+${Keys.A}`,
     () => getActiveTerminalHandle()?.selectAll(),
     hotkeyOpts,
   )
 
   // ⌘⇧T — reopen the last closed tab in its original project
   useHotkeys(
-    `${Mod.Meta}+${Mod.Shift}+${Keys.T}`,
+    `${Mod.Primary}+${Mod.Shift}+${Keys.T}`,
     () => {
       const closed = popClosedTab()
       if (!closed) return
@@ -259,7 +266,7 @@ export function WorkspaceLayout() {
 
   // ⌘F — open the find overlay over the active terminal
   useHotkeys(
-    `${Mod.Meta}+${Keys.F}`,
+    `${Mod.Primary}+${Keys.F}`,
     () => {
       const projectId = $activeProjectId.get()
       const tabId = $activeTabId.get()[projectId] ?? ''
@@ -271,14 +278,14 @@ export function WorkspaceLayout() {
 
   // ⌘G / ⌘⇧G — find next / previous (only meaningful while bar is open)
   useHotkeys(
-    `${Mod.Meta}+${Keys.G}`,
+    `${Mod.Primary}+${Keys.G}`,
     () => {
       if ($activeSearch.get()) getActiveTerminalHandle()?.searchNext()
     },
     hotkeyOpts,
   )
   useHotkeys(
-    `${Mod.Meta}+${Mod.Shift}+${Keys.G}`,
+    `${Mod.Primary}+${Mod.Shift}+${Keys.G}`,
     () => {
       if ($activeSearch.get()) getActiveTerminalHandle()?.searchPrevious()
     },

@@ -53,7 +53,7 @@ impl Mod for ShellProcessMod {
         let signaler = ctx.async_agent_signaler();
 
         let handle = tokio::spawn(async move {
-            let mut prev_pids: HashMap<String, u32> = HashMap::new();
+            let mut prev_agents: HashMap<String, (u32, String)> = HashMap::new();
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
             let cwd_rx = cwd_rx;
 
@@ -72,7 +72,7 @@ impl Mod for ShellProcessMod {
                 // Skip agent diffing until the CWD is known — avoids emitting
                 // agent_detected with an empty CWD string on the first scan tick.
                 if let Some(ref cwd) = cwd {
-                    diff_agent_pids(&processes, &mut prev_pids, cwd, &signaler);
+                    diff_agent_pids(&processes, &mut prev_agents, cwd, &signaler);
                 }
             }
         });
@@ -93,39 +93,99 @@ impl Mod for ShellProcessMod {
     }
 }
 
+/// Resolve a raw process name to a canonical agent ID.
+///
+/// On Linux, Node.js-based agents (Codex CLI, Claude Code) report their
+/// process name as `node` or `node-mainthread` rather than the agent binary
+/// name. This function normalises the name by inspecting the full command
+/// string when the process name alone is ambiguous.
+///
+/// Matching rules:
+///   - `"claude-code"` ← name is `"claude"` OR name starts with `"node"` and
+///     the command contains evidence of Claude Code (argv[0] basename or a
+///     path segment matching `"claude"`).
+///   - `"codex"` ← name is `"codex"` OR name starts with `"node"` and the
+///     command contains evidence of Codex (argv[0] basename or a path
+///     segment matching `"codex"`).
+///   - Otherwise returns the original name unchanged (shell processes etc.)
+fn resolve_agent_name(name: &str, command: &str) -> String {
+    if name == "claude" {
+        return "claude-code".to_string();
+    }
+    if name == "codex" {
+        return "codex".to_string();
+    }
+    if name.starts_with("node") {
+        // Node.js wrapper scripts (e.g. /usr/local/bin/codex) exec the JS
+        // runtime directly, so argv[0] becomes the node binary path and the
+        // actual agent script appears later in the command.  Check argv[0]
+        // basename first (handles `/usr/local/bin/codex`), then scan the rest
+        // of the command for known agent path segments (handles
+        // `/usr/local/bin/node .../codex.js`).
+        let exe = command.split_whitespace().next().unwrap_or("");
+        let exe_name = exe.rsplit('/').next().unwrap_or(exe);
+        let exe_name = exe_name.rsplit('\\').next().unwrap_or(exe_name);
+        if exe_name == "codex" {
+            return "codex".to_string();
+        }
+        if exe_name == "claude" {
+            return "claude-code".to_string();
+        }
+        // argv[0] is the node binary itself — check the remaining args for
+        // agent script paths like ".../codex.js" or ".../claude/...".
+        // We check EVERY path segment (not just the basename) so paths like
+        // /usr/local/lib/node_modules/codex/dist/index.js are caught.
+        for arg in command.split_whitespace().skip(1) {
+            for segment in arg.split(|c: char| c == '/' || c == '\\') {
+                if segment == "codex" || segment.starts_with("codex.") {
+                    return "codex".to_string();
+                }
+                if segment == "claude" || segment.starts_with("claude.") {
+                    return "claude-code".to_string();
+                }
+            }
+        }
+    }
+    name.to_string()
+}
+
 fn diff_agent_pids(
     processes: &[serde_json::Value],
-    prev_pids: &mut HashMap<String, u32>,
+    prev_agents: &mut HashMap<String, (u32, String)>,
     cwd: &str,
     signaler: &AsyncAgentSignaler,
 ) {
-    let mut current_pids: HashMap<String, (u32, String)> = HashMap::new();
+    let mut current_agents: HashMap<String, (u32, String)> = HashMap::new();
     for proc in processes {
-        let name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        if name == "claude" || name == "codex" {
+        let raw_name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("");
+        let resolved = resolve_agent_name(raw_name, cmd);
+        if resolved == "claude-code" || resolved == "codex" {
             if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
-                let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string();
-                current_pids.insert(name.to_string(), (pid as u32, cmd));
+                current_agents.insert(resolved, (pid as u32, cmd.to_string()));
             }
         }
     }
 
-    for (agent, prev_pid) in prev_pids.iter() {
-        match current_pids.get(agent) {
+    // Detect clears: agent gone, or PID changed (restart).
+    for (agent, (prev_pid, _prev_cmd)) in prev_agents.iter() {
+        match current_agents.get(agent) {
             None => signaler.agent_cleared(agent),
             Some((curr_pid, _)) if curr_pid != prev_pid => { signaler.agent_cleared(agent); }
             _ => {}
         }
     }
-    for (agent, (curr_pid, cmd)) in &current_pids {
-        match prev_pids.get(agent) {
+    // Detect appearances: new agent, PID changed (restart), or command changed.
+    for (agent, (curr_pid, cmd)) in &current_agents {
+        match prev_agents.get(agent) {
             None => signaler.agent_detected(agent, cwd, cmd),
-            Some(prev_pid) if prev_pid != curr_pid => { signaler.agent_detected(agent, cwd, cmd); }
+            Some((prev_pid, _prev_cmd)) if prev_pid != curr_pid => { signaler.agent_detected(agent, cwd, cmd); }
+            Some((prev_pid, prev_cmd)) if prev_cmd != cmd => { signaler.agent_detected(agent, cwd, cmd); }
             _ => {}
         }
     }
 
-    *prev_pids = current_pids.into_iter().map(|(k, (pid, _))| (k, pid)).collect();
+    *prev_agents = current_agents;
 }
 
 #[derive(serde::Serialize)]
@@ -153,8 +213,18 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
         return Vec::new();
     }
 
-    // Step 2: get full cmd args via ps (sysinfo can't read cmd on macOS)
-    let args_map = get_process_args(&pids).await;
+    // Step 2: find grandchildren (launchers like npx, bun, cargo fork the real
+    // work). We need them BEFORE getting args so we can fetch commands for the
+    // full subtree — on Linux the agent often runs as a grandchild and its
+    // command line (containing --model, -m, etc.) is the one we want to show.
+    let grandchildren = find_grandchildren(&pids).await;
+
+    // Build full PID list for args lookup (direct children + grandchildren).
+    let mut all_pids = pids.clone();
+    for (gc, _) in &grandchildren {
+        all_pids.push(*gc);
+    }
+    let args_map = get_process_args(&all_pids).await;
 
     // Step 3: build the subtree attribution map (pid → root direct-child pid).
     // This single ps scan is shared by both metric aggregation and port scanning
@@ -164,10 +234,16 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     //   shell → launcher (direct child) → server (grandchild)
     // Without grandchild attribution, memory shows only the launcher's footprint
     // and port scanning misses the server's bound port entirely.
-    let grandchildren = find_grandchildren(&pids).await;
     let mut attribution: HashMap<u32, u32> = pids.iter().map(|&p| (p, p)).collect();
     for (grandchild, parent) in &grandchildren {
         attribution.insert(*grandchild, *parent);
+    }
+
+    // Reverse attribution: direct child → its grandchildren. Used to find the
+    // actual agent command when the direct child is a wrapper (e.g. npx).
+    let mut child_to_grandchildren: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (gc, parent) in &grandchildren {
+        child_to_grandchildren.entry(*parent).or_default().push(*gc);
     }
 
     // Step 4: get CPU/memory/elapsed via sysinfo (not Send — spawn_blocking).
@@ -191,10 +267,41 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
 
     raw.into_iter()
         .map(|(pid, name, cpu_percent, memory_kb, elapsed_time)| {
-            let command = args_map.get(&pid).cloned().unwrap_or_default();
+            let mut command = args_map.get(&pid).cloned().unwrap_or_default();
             let listening_ports = ports_map.get(&pid).cloned().unwrap_or_default();
+            let resolved_name = resolve_agent_name(&name, &command);
+
+            // On Linux, agents installed via npm/npx run as grandchildren of the
+            // shell (e.g. shell → npx → actual-claude). The wrapper's command
+            // doesn't include flags like --model. If a grandchild resolves to
+            // the same agent, use its command so the status bar shows the real
+            // invocation including any model flags.
+            if resolved_name == "claude-code" || resolved_name == "codex" {
+                if let Some(gcs) = child_to_grandchildren.get(&pid) {
+                    for gc_pid in gcs {
+                        if let Some(gc_cmd) = args_map.get(gc_pid) {
+                            // We pass "node" as the name because on Linux
+                            // grandchildren are typically node processes; the
+                            // function does a comprehensive command-line search
+                            // so it correctly resolves native binaries too.
+                            let gc_resolved = resolve_agent_name("node", gc_cmd);
+                            if gc_resolved == resolved_name {
+                                command = gc_cmd.clone();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             serde_json::to_value(ProcessEntry {
-                pid, command, name, cpu_percent, memory_kb, elapsed_time, listening_ports,
+                pid,
+                command,
+                name: resolved_name,
+                cpu_percent,
+                memory_kb,
+                elapsed_time,
+                listening_ports,
             })
             .unwrap_or(serde_json::json!(null))
         })
