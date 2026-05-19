@@ -12,9 +12,7 @@ import { initThemeFromStorage } from '@/modules/stores/theme'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@xterm/xterm/css/xterm.css'
-import './theme-vars.css'
 import './index.css'
-import './terminal-surface.css'
 
 async function bootstrap() {
   await startModListener()
