@@ -1,4 +1,15 @@
-name: "Release (Linux: AppImage + DEB)"
+# Tag-triggered Linux release.
+#
+# Push a `v*` tag (e.g. `v0.1.0`, `v0.2.0-rc.1`) → this workflow builds Linux
+# .deb + .AppImage (x86_64) and aarch64 AppImage, then attaches them to the
+# DRAFT release created by release.yml.
+#
+# This workflow always runs, even if the macOS release.yml fails — `!cancelled()`
+# means it only skips when the entire workflow run is manually cancelled.
+# This ensures Linux artifacts are always produced regardless of macOS signing
+# issues.
+
+name: Release (Linux)
 
 on:
   push:
@@ -9,9 +20,12 @@ permissions:
   contents: write
 
 jobs:
-  release-linux:
-    name: Build + draft release (Linux AppImage + DEB)
-    runs-on: ubuntu-latest
+  # ---------------------------------------------------------------------------
+  # x86_64 Linux: .deb + .AppImage
+  # ---------------------------------------------------------------------------
+  release-linux-x64:
+    name: Linux x86_64 (.deb + .AppImage)
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
 
     steps:
@@ -20,51 +34,107 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
 
       - name: Cache Cargo registry + build artifacts
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-linux-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-linux-
+          workspaces: src-tauri -> target
 
       - name: Install frontend dependencies
         run: bun install
 
-      - name: Install Linux build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libglib2.0-bin pkg-config libfuse2
-          curl -sSL https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage \
-            -o /usr/local/bin/appimagetool \
-            && echo '0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5  /usr/local/bin/appimagetool' \
-            | sha256sum -c \
-            && chmod +x /usr/local/bin/appimagetool
+      - name: Tauri build (Linux x86_64)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: ""
 
-      - name: Build Tauri (AppImage + deb)
-        run: |
-          bun run build
-          bun run tauri:build:linux
-
-      - name: Create draft release with Linux artifacts
+      - name: Attach Linux x86_64 artifacts to draft release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          body: 'Automated Linux release artifacts (AppImage + deb)'
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
-          fail_on_unmatched_files: false
+
+  # ---------------------------------------------------------------------------
+  # ARM64 Linux: AppImage (for ARM servers / Raspberry Pi 4/5)
+  # ---------------------------------------------------------------------------
+  release-linux-arm64:
+    name: Linux arm64 (AppImage)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust toolchain (aarch64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compilation toolchain
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Cache Cargo registry + build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Tauri build (Linux arm64)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --target aarch64-unknown-linux-gnu
+
+      - name: Attach Linux arm64 artifacts to draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
