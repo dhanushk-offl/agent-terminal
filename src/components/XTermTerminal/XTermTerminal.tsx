@@ -126,12 +126,9 @@ export const XTermTerminal = React.memo(function XTermTerminal({
     let webglAddon: WebglAddon | null = null
 
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
-    const docTheme = document.documentElement.getAttribute('data-theme')
-    const prefersDark = docTheme === 'dark' ? true : docTheme === 'light' ? false : darkMq.matches
 
     const term = new Terminal({
       allowProposedApi: true, // required by @xterm/addon-webgl
-      theme: prefersDark ? DARK_THEME : LIGHT_THEME,
       theme: getTerminalTheme(
         document.documentElement.getAttribute('data-theme'),
         darkMq.matches,
@@ -219,14 +216,6 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       attributeFilter: ['data-theme'],
     })
 
-    const mo = new MutationObserver(() => {
-      if (disposed) return
-      const docTheme = document.documentElement.getAttribute('data-theme')
-      const useDark = docTheme === 'dark' ? true : docTheme === 'light' ? false : darkMq.matches
-      term.options.theme = useDark ? DARK_THEME : LIGHT_THEME
-    })
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-
     // Drive fit() via ResizeObserver — fires after layout, no debounce needed.
     // term.onResize notifies the PTY of the new cols/rows via the onResize prop.
     resizeObserver = new ResizeObserver((entries) => {
@@ -286,7 +275,12 @@ export const XTermTerminal = React.memo(function XTermTerminal({
       applyAppTheme: () => {
         const docTheme = document.documentElement.getAttribute('data-theme')
         const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
-        const useDark = docTheme === 'dark' ? true : docTheme === 'light' ? false : darkMq.matches
+        const useDark =
+          docTheme === 'dark'
+            ? true
+            : docTheme === 'light'
+              ? false
+              : darkMq.matches
         term.options.theme = useDark ? DARK_THEME : LIGHT_THEME
       },
     })
