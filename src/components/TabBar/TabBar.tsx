@@ -112,7 +112,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             {tab.pinned ? (
               <button
                 type="button"
-                className="relative z-10 -ml-7 mr-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-tab-fg-active opacity-85 hover:opacity-100"
+                className="relative z-10 mr-1.5 -ml-7 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-tab-fg-active opacity-85 hover:opacity-100"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -124,7 +124,7 @@ function TabItem({ tab, projectId }: { tab: Tab; projectId: string }) {
             ) : (
               <button
                 type="button"
-                className="relative z-10 -ml-7 mr-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-tab-fg-active opacity-85 hover:bg-sidebar-hover hover:opacity-100"
+                className="relative z-10 mr-1.5 -ml-7 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-tab-fg-active opacity-85 hover:bg-sidebar-hover hover:opacity-100"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation()

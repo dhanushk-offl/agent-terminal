@@ -39,8 +39,7 @@
       "minimumSystemVersion": "10.15",
       "hardenedRuntime": true,
       "entitlements": "macos/entitlements.plist"
-    }
-    ,
+    },
     "linux": {
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "fonts-noto-color-emoji"]

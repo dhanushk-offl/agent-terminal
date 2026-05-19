@@ -130,7 +130,7 @@ export const Mod = {
     } catch {
       return 'ctrl'
     }
-  }
+  },
 } as const
 
 export type ModName = (typeof Mod)[keyof typeof Mod]

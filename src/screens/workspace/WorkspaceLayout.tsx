@@ -214,12 +214,19 @@ export function WorkspaceLayout() {
   // presses use the same physical key (event.code "Equal") and only
   // differ by the shift modifier.
   useHotkeys(
-    [`${Mod.Primary}+${Keys.Equal}`, `${Mod.Primary}+${Mod.Shift}+${Keys.Equal}`],
+    [
+      `${Mod.Primary}+${Keys.Equal}`,
+      `${Mod.Primary}+${Mod.Shift}+${Keys.Equal}`,
+    ],
     () => increaseFontSize(),
     hotkeyOpts,
   )
   // ⌘- — decrease font size
-  useHotkeys(`${Mod.Primary}+${Keys.Minus}`, () => decreaseFontSize(), hotkeyOpts)
+  useHotkeys(
+    `${Mod.Primary}+${Keys.Minus}`,
+    () => decreaseFontSize(),
+    hotkeyOpts,
+  )
   // Primary+0 — reset font size to default
   useHotkeys(`${Mod.Primary}+${Keys.Digit0}`, () => resetFontSize(), hotkeyOpts)
 
