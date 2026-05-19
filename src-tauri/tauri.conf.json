@@ -41,7 +41,6 @@
       "entitlements": "macos/entitlements.plist"
     },
     "linux": {
-      "category": "Utility",
       "deb": {
         "depends": [
           "libwebkit2gtk-4.1-0",
