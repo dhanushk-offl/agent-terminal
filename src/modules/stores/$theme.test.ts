@@ -5,7 +5,7 @@ import {
   getEffectiveTheme,
   initThemeFromStorage,
   setTheme,
-} from '@/modules/stores/theme'
+} from '@/modules/stores/$theme'
 
 function installDomStubs() {
   const attributes = new Map<string, string>()

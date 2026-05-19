@@ -8,7 +8,7 @@ import { syncNotificationsEnabledToBackend } from '@/modules/notifications/prefe
 import { initNavigation } from '@/modules/stores/$navigation'
 import { $projects } from '@/modules/stores/$projects'
 import { initTabRecencySubscriber } from '@/modules/stores/$tabRecency.init'
-import { initThemeFromStorage } from '@/modules/stores/theme'
+import { initThemeFromStorage } from '@/modules/stores/$theme'
 import { WorkspaceLayout } from '@/screens/workspace/WorkspaceLayout'
 import type { Project } from '@/screens/workspace/workspace.types'
 import '@xterm/xterm/css/xterm.css'

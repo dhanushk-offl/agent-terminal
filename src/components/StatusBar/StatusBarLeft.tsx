@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { RunningDot } from '@/components/RunningDot'
-import { ThemeToggle } from '@/components/ui/ThemeToggle'
+import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta, type TabMeta } from '@/modules/stores/$tabMeta'
 import { MONO_FONT, makeTabKey } from '@/screens/workspace/workspace.helpers'

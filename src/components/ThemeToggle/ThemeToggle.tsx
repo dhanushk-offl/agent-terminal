@@ -1,8 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { ChevronDown, Monitor, Moon, Sun } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { $theme, setTheme, type Theme } from '@/modules/stores/theme'
-import { buttonVariants } from './button'
+import { buttonVariants } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,13 +9,15 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from './dropdown-menu'
+} from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from './tooltip'
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+import { $theme, setTheme, type Theme } from '@/modules/stores/$theme'
 
 const OPTIONS: Array<{
   value: Theme
