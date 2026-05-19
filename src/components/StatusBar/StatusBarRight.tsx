@@ -10,7 +10,7 @@ import {
   Upload,
 } from 'lucide-react'
 import type React from 'react'
-import { parseModelFlag } from '@/components/agent.helpers'
+import { resolveModel } from '@/components/agent.helpers'
 import { PrItem } from '@/components/StatusBar/PrItem'
 import { NotificationToggle } from '@/components/ui/NotificationToggle'
 import {
@@ -94,13 +94,9 @@ function formatMemory(kb: number): string {
  * Extracted to keep StatusBarRight's cognitive complexity under the lint limit.
  *
  * Always includes: name, pid, elapsed (Timer icon), memory (MemoryStick icon).
- * Conditionally includes: ports (Plug icon), model (Sparkles icon).
+ * Conditionally includes: ports (Plug icon).
  */
-function buildProcItems(
-  proc: ProcessInfo,
-  ports: number[],
-  model: string | null,
-): React.ReactNode[] {
+function buildProcItems(proc: ProcessInfo, ports: number[]): React.ReactNode[] {
   const items: React.ReactNode[] = [
     // Process name + PID: no icons — both are already self-describing labels.
     <span key="name" style={{ fontFamily: MONO_FONT }}>
@@ -154,25 +150,6 @@ function buildProcItems(
           className="shrink-0"
         />
         {ports.map((p) => `:${p}`).join(' ')}
-      </span>,
-    )
-  }
-
-  if (model) {
-    // Sparkles icon: --model flag value (AI model context).
-    items.push(
-      <span
-        key="model"
-        className="flex items-center gap-1 opacity-60"
-        style={{ fontFamily: MONO_FONT }}
-      >
-        <Sparkles
-          aria-hidden="true"
-          size={10}
-          strokeWidth={1.5}
-          className="shrink-0"
-        />
-        {model}
       </span>,
     )
   }
@@ -250,18 +227,29 @@ export function StatusBarRight() {
 
   if (!meta) return null
 
-  const { status, agentCmd, processes, listeningPorts, cwd, git } = meta
+  const {
+    status,
+    agentCmd,
+    agentId,
+    agentModel,
+    processes,
+    listeningPorts,
+    cwd,
+    git,
+  } = meta
 
   const items: React.ReactNode[] = []
+
+  // ── Model (resolved unconditionally — never depends on process data) ────
+  const model = resolveModel(agentCmd, agentId, agentModel)
 
   // ── Any tab with live process data ───────────────────────────────────────
   // Gate on proc being present, not on tab type, so this works for any tab
   // type that populates `processes` in the future.
   const proc = processes?.[0]
   if (proc) {
-    const model = parseModelFlag(agentCmd)
     const ports = listeningPorts ?? []
-    items.push(...buildProcItems(proc, ports, model))
+    items.push(...buildProcItems(proc, ports))
   } else if (status !== 'idle') {
     // ── Tab with no process data yet — show status text ───────────────────
     const statusColor: Record<string, string> = {
@@ -284,6 +272,25 @@ export function StatusBarRight() {
         </span>,
       )
     }
+  }
+
+  // ── Model (Sparkles icon) — shown for agent tabs regardless of process ──
+  if (model) {
+    items.push(
+      <span
+        key="model"
+        className="flex items-center gap-1 opacity-60"
+        style={{ fontFamily: MONO_FONT }}
+      >
+        <Sparkles
+          aria-hidden="true"
+          size={10}
+          strokeWidth={1.5}
+          className="shrink-0"
+        />
+        {model}
+      </span>,
+    )
   }
 
   // ── Git branch — always shown when available ─────────────────────────────

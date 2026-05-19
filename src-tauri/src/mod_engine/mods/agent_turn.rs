@@ -177,6 +177,21 @@ impl Mod for AgentTurnMod {
             return;
         }
 
+        // Forward model from any hook event that includes one. This runs
+        // before the event-type dispatch below so every event has a chance
+        // to update the model — not just SessionStart or UserPromptSubmit.
+        if let (Some(tab_id), Some(model)) = (self.tab_id_for(payload), &payload.model) {
+            if !model.trim().is_empty() {
+                if let Some(emitter) = self.emitters.get(&tab_id) {
+                    emitter.emit(
+                        "agent_turn",
+                        "model_changed",
+                        serde_json::json!({ "model": model }),
+                    );
+                }
+            }
+        }
+
         match payload.event.as_str() {
             "SessionStart" => self.handle_session_start(payload),
             "UserPromptSubmit" => self.handle_in_progress(payload),
@@ -497,6 +512,7 @@ this line is not json at all
             transcript_path: None,
             last_assistant_message: None,
             prompt: None,
+            model: None,
         }
     }
 
