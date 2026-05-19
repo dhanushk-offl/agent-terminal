@@ -41,10 +41,30 @@
       "entitlements": "macos/entitlements.plist"
     },
     "linux": {
+      "category": "Utility",
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "fonts-noto-color-emoji"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "fonts-noto-color-emoji",
+          "ca-certificates",
+          "libssl3"
+        ]
       },
-      "appimage": {}
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libayatana-appindicator",
+          "noto-fonts-emoji",
+          "ca-certificates",
+          "openssl-libs"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
     }
   }
 }

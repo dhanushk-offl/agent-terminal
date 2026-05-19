@@ -87,6 +87,7 @@ pub struct NotificationService {
         all(not(debug_assertions), target_os = "windows"),
         all(not(debug_assertions), target_os = "linux")
     ))]
+    #[allow(dead_code)]
     app: AppHandle,
     inner: Mutex<Inner>,
     /// Release-mode only: handle to the user-notify NotificationManager. Held
@@ -631,7 +632,6 @@ mod backend {
     use super::{FirePayload, NotificationService};
     use std::sync::Arc;
     use notify_rust::{Notification, Timeout};
-    use tauri::{Emitter, Manager};
 
     pub fn init(_svc: &Arc<NotificationService>) {
         eprintln!("[notifications] linux release backend (notify-rust) initialized");
@@ -640,37 +640,26 @@ mod backend {
     pub async fn fire(svc: &Arc<NotificationService>, payload: FirePayload) {
         let title = payload.title;
         let body = payload.body;
-        let composite_id = payload.composite_tab_id.clone();
-        let project_id = payload.project_id.clone();
-        let app = svc.app.clone();
 
+        // Double-check enabled state (defensive: suppression already checked at maybe_notify level)
+        if !svc.inner.lock().unwrap().enabled {
+            eprintln!("[notifications] notification disabled: {title}");
+            return;
+        }
+
+        // Fire notification through notify-rust
+        // Note: Linux D-Bus notifications don't provide reliable click callbacks
+        // through this library. The notification is shown, but action routing
+        // may vary by desktop environment.
         match Notification::new()
             .summary(&title)
             .body(&body)
             .timeout(Timeout::Default)
-            .action("default", "Open")
             .show_async()
+            .await
         {
-            Ok(handle) => {
-                handle.on_closure(|reason| {
-                    eprintln!("[notifications] notification closed: {reason:?}");
-                    if !matches!(reason, notify_rust::CloseReason::Action(_)) {
-                        return;
-                    }
-                    eprintln!("[notifications] action clicked — focusing window and emitting notification:click");
-                    if let Some(webview) = app.get_webview_window("main") {
-                        let _ = webview.show();
-                        let _ = webview.unminimize();
-                        let _ = webview.set_focus();
-                    }
-                    let _ = app.emit(
-                        "notification:click",
-                        serde_json::json!({
-                            "project_id": project_id,
-                            "tab_id": composite_id,
-                        }),
-                    );
-                });
+            Ok(_handle) => {
+                eprintln!("[notifications] notification sent: {title}");
             }
             Err(e) => eprintln!("[notifications] notify-rust send failed: {e}"),
         }
