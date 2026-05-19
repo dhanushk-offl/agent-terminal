@@ -8,10 +8,52 @@ const LEGACY_KEY = 'theme'
 export const $theme = atom<Theme>('system')
 
 function resolveSystemTheme(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light'
+  if (
+    typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function'
+  ) {
+    return 'light'
+  }
   return window.matchMedia('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light'
+}
+
+// Module refs for the OS-preference listener — kept so the subscription
+// can be torn down (test teardown, hot reload) and so re-calling
+// initThemeFromStorage doesn't stack listeners.
+let systemMq: MediaQueryList | null = null
+let systemListener: ((e: MediaQueryListEvent) => void) | null = null
+
+/**
+ * Wires an OS prefers-color-scheme listener that re-applies the theme
+ * whenever the current selection is 'system'. Idempotent. Guarded for
+ * runtimes that define `window` but not `matchMedia` (bun:test, jsdom-
+ * minimal, partial SSR), which is why this lives in a function rather
+ * than at module top-level — running on import threw in CI.
+ */
+function subscribeSystemThemeChanges() {
+  if (systemListener) return
+  if (
+    typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function'
+  ) {
+    return
+  }
+  systemMq = window.matchMedia('(prefers-color-scheme: dark)')
+  systemListener = () => {
+    if ($theme.get() === 'system') applyThemeToDocument('system')
+  }
+  systemMq.addEventListener('change', systemListener)
+}
+
+/** Removes the OS prefers-color-scheme listener. No-op if not subscribed. */
+export function disposeThemeSubscriptions() {
+  if (systemMq && systemListener) {
+    systemMq.removeEventListener('change', systemListener)
+  }
+  systemMq = null
+  systemListener = null
 }
 
 function migrateLegacyKey() {
@@ -35,6 +77,7 @@ export function initThemeFromStorage() {
     }
   } catch {}
   applyThemeToDocument($theme.get())
+  subscribeSystemThemeChanges()
 }
 
 export function setTheme(t: Theme) {
@@ -60,14 +103,4 @@ export function getEffectiveTheme(t: Theme): 'light' | 'dark' {
   if (t === 'dark' || t === 'light') return t
   if (typeof window === 'undefined') return 'light'
   return resolveSystemTheme()
-}
-
-if (typeof window !== 'undefined') {
-  window
-    .matchMedia('(prefers-color-scheme: dark)')
-    .addEventListener('change', () => {
-      if ($theme.get() === 'system') {
-        applyThemeToDocument('system')
-      }
-    })
 }
