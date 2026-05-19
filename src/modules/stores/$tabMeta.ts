@@ -77,6 +77,15 @@ export type TabMeta = {
   /** Non-zero exit code when status is "error". */
   exitCode?: number
   /**
+   * Epoch-ms timestamp when status most recently became "done". Drives
+   * the transient green dot in TabStatusIcon. Lives in the store (not
+   * component-local) so every render of the icon — sidebar, tab bar,
+   * Cmd+P palette — agrees on whether the dot is currently lit. Cleared
+   * by the mod-listener's per-tab 10s timer or when the user navigates
+   * to the tab (acknowledgement).
+   */
+  doneAt?: number
+  /**
    * Machine-readable agent identifier — `"claude-code"`, `"codex"`, etc.
    * Use this for routing / lookups, never for display.
    * Set when type is "agent" by the per-agent mod (ClaudeCodeMod / CodexMod / …).

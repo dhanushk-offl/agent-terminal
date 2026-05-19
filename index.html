@@ -10,6 +10,26 @@
         try {
           var dark = window.matchMedia('(prefers-color-scheme: dark)').matches
           document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+      (() => {
+        var KEY, raw, legacy, theme
+        try {
+          KEY = 'agent-terminal:theme'
+          raw = localStorage.getItem(KEY)
+          if (raw === null) {
+            legacy = localStorage.getItem('theme')
+            if (legacy === 'light' || legacy === 'dark') {
+              raw = legacy
+              localStorage.setItem(KEY, legacy)
+              localStorage.removeItem('theme')
+            }
+          }
+          theme =
+            raw === 'light' || raw === 'dark'
+              ? raw
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
+          document.documentElement.setAttribute('data-theme', theme)
         } catch (_e) {}
       })()
     </script>
