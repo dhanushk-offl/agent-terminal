@@ -25,15 +25,19 @@ use pty_manager::PtyMap;
 use shell_integration::setup_shell_integration;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+#[cfg(all(target_os = "macos", not(feature = "dev-instance")))]
+use tauri::Emitter;
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, SubmenuBuilder};
+#[cfg(all(target_os = "macos", not(feature = "dev-instance")))]
+use tauri::menu::MenuItemBuilder;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pty_map: PtyMap = Arc::new(Mutex::new(HashMap::new()));
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Single-instance MUST be the first plugin so duplicate launches
         // (notification clicks routing to a fresh .app, double-clicking the
         // dock icon, etc.) get intercepted before any other plugin tries to
@@ -48,7 +52,21 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+
+    // Self-update — only the prod-namespaced build registers the plugin.
+    // The dev bundle id (com.daniakash.agent-terminal-dev) cannot be the
+    // legitimate target of a manifest signed for the prod app, so
+    // dev-instance builds skip the plugin entirely rather than risk an
+    // update attempt that overlays a foreign bundle. process plugin is
+    // gated under the same cfg because its only consumer here is the
+    // updater flow's post-install relaunch.
+    #[cfg(not(feature = "dev-instance"))]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
+    builder
         .setup(|app| {
             // Custom macOS menu — omits the default items whose shortcuts
             // conflict with our keyboard handlers:
@@ -71,6 +89,16 @@ pub fn run() {
             if let Err(e) = install_app_menu(app) {
                 eprintln!("[agent-terminal] menu setup failed: {e}");
             }
+
+            // Forward the "Check for Updates…" menu click to the renderer
+            // as a `menu:check-for-updates` event. The renderer's
+            // checkForUpdate() handler drives the rest of the flow.
+            #[cfg(all(target_os = "macos", not(feature = "dev-instance")))]
+            app.on_menu_event(|app_handle, event| {
+                if event.id() == "check-for-updates" {
+                    let _ = app_handle.emit("menu:check-for-updates", ());
+                }
+            });
 
             // Best-effort: write shell integration scripts. Never fail app startup.
             if let Err(e) = setup_shell_integration() {
@@ -144,7 +172,34 @@ pub fn run() {
 /// Builds and installs a custom macOS menu that intentionally omits the
 /// default items whose shortcuts collide with our app-level hotkeys.
 #[cfg(target_os = "macos")]
-fn install_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn install_app_menu(
+    app: &tauri::App,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // "Check for Updates…" goes between About and Services in the prod
+    // app menu. dev-instance builds intentionally skip it because the
+    // updater plugin isn't registered in those — surfacing a menu item
+    // that does nothing would be a worse footgun than not having it.
+    #[cfg(not(feature = "dev-instance"))]
+    let app_submenu = {
+        let check_for_updates =
+            MenuItemBuilder::with_id("check-for-updates", "Check for Updates…")
+                .build(app)?;
+        SubmenuBuilder::new(app, "Agent Terminal")
+            .about(None)
+            .separator()
+            .item(&check_for_updates)
+            .separator()
+            .services()
+            .separator()
+            .hide()
+            .hide_others()
+            .show_all()
+            .separator()
+            .quit()
+            .build()?
+    };
+
+    #[cfg(feature = "dev-instance")]
     let app_submenu = SubmenuBuilder::new(app, "Agent Terminal")
         .about(None)
         .separator()

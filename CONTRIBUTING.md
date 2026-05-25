@@ -13,6 +13,7 @@ Thank you for your interest in contributing. Agent Terminal is in early active d
 - [Adding a new agent (MOD system guide)](#adding-a-new-agent-mod-system-guide)
 - [Reporting bugs](#reporting-bugs)
 - [Requesting features](#requesting-features)
+- [Releasing](#releasing)
 
 ---
 
@@ -288,6 +289,47 @@ Open an issue on GitHub with:
 
 - **New agent support:** [request on X →](https://x.com/dani_akash_)
 - **Other features:** open a GitHub issue with the `enhancement` label and describe your use case
+
+---
+
+## Releasing
+
+Releases are tag-triggered. Pushing a `vX.Y.Z` (or `vX.Y.Z-rc.N`) tag fires the workflow, which builds, signs, and notarizes per-arch `.dmg`s in parallel, attaches them plus the updater bundles to a draft GitHub release, and publishes the updater manifest to the `release-manifest` branch.
+
+### Cutting a release
+
+1. **Bump the version** in three places so the tag matches the bundle metadata:
+   - `package.json`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.toml`
+
+   Then refresh `src-tauri/Cargo.lock` (`cargo update -p agent-terminal`) and open a PR titled `chore(release): vX.Y.Z`. The `chore(release)` prefix is filtered out of the next changelog.
+
+2. **Merge the bump PR**, then tag and push:
+
+   ```sh
+   git checkout main && git pull
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+3. **Wait for the workflow** (~10 min). When it finishes, a draft release appears on the [releases page](https://github.com/DaniAkash/agent-terminal/releases) with:
+   - 2× `Agent.Terminal_<version>_{aarch64,x64}.dmg` (versioned)
+   - 2× `agent-terminal-{aarch64,x64}.dmg` (stable filenames for the README's `/releases/latest/download/` badges)
+   - 2× `Agent.Terminal_{aarch64,x64}.app.tar.gz` + `.sig` (updater payloads)
+   - 1× `latest.json` (manifest copy)
+
+4. **Write the release notes** following the v0.1.x style: headline emoji, "Still pre-release" banner, **What's new** with feature blurbs, **Install** with both badge links, **Still on the heads-up list**, optional **Thanks**, **Feedback**.
+
+5. **Publish**, and:
+   - **Tick "Set as the latest release"** even if you're also ticking "Set as pre-release". This is required for `/releases/latest/download/` to redirect to this release — GitHub treats "latest" and "prerelease" as independent flags, but the `/latest/` redirect is off by default for pre-releases unless you opt in.
+   - Verify the README badges actually resolve: `curl -ILo /dev/null https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg` should redirect to the new asset.
+
+6. **Verify `latest.json`** at `https://raw.githubusercontent.com/DaniAkash/agent-terminal/release-manifest/latest.json` reflects the new version (cached ~5 min by raw.githubusercontent.com). Installed apps see the update on their next launch, or immediately via **Agent Terminal → Check for Updates…**.
+
+### Test tags
+
+For dry-runs (e.g., verifying a workflow change), push a `vX.Y.Z-rc.N` tag on a throwaway branch. The workflow treats it the same as a real release — full build, signing, notarization, draft release, manifest publish. Just don't publish the draft and don't tick "Set as latest"; delete the tag and draft afterwards if you want a clean releases page.
 
 ---
 

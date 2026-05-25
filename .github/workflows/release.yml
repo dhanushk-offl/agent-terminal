@@ -1,8 +1,8 @@
 # Tag-triggered signed + notarized macOS release.
 #
-# Push a `v*` tag (e.g. `v0.1.0`, `v0.2.0-rc.1`) → this workflow builds a
-# universal (Apple Silicon + Intel) signed + notarized .dmg, creates a
-# DRAFT GitHub Release for that tag, and attaches the .dmg.
+# Push a `v*` tag (e.g. `v0.1.0`, `v0.2.0-rc.1`) → this workflow builds
+# both per-arch signed + notarized .dmgs in parallel, creates a DRAFT
+# GitHub Release for that tag, and attaches both .dmgs.
 #
 # The release stays in DRAFT state. Review it in the GitHub UI and click
 # Publish when ready — never auto-published.
@@ -13,21 +13,23 @@
 #      filtered out by cliff.toml so the version-bump commit doesn't show
 #      up in the next release's changelog.
 #   3. git tag vX.Y.Z && git push origin main --tags
-#   4. Wait ~10 min, then publish the draft from the Releases page
+#   4. Wait ~15 min, then publish the draft from the Releases page
 #
 # Required repo secrets (settings → Secrets and variables → Actions):
-#   APPLE_CERTIFICATE           — base64-encoded Developer ID .p12
-#   APPLE_CERTIFICATE_PASSWORD  — password for the .p12
-#   APPLE_SIGNING_IDENTITY      — full Developer ID Application identity string
-#   APPLE_ID                    — Apple ID email
-#   APPLE_PASSWORD              — app-specific password for notarytool
-#   APPLE_TEAM_ID               — Apple Developer team identifier
-#   KEYCHAIN_PASSWORD           — throwaway, unlocks the temp runner keychain
+#   APPLE_CERTIFICATE                    — base64-encoded Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD           — password for the .p12
+#   APPLE_SIGNING_IDENTITY               — full Developer ID Application identity string
+#   APPLE_ID                             — Apple ID email
+#   APPLE_PASSWORD                       — app-specific password for notarytool
+#   APPLE_TEAM_ID                        — Apple Developer team identifier
+#   KEYCHAIN_PASSWORD                    — throwaway, unlocks the temp runner keychain
+#   TAURI_SIGNING_PRIVATE_KEY            — minisign private key for updater bundles
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   — password for the minisign key
 #
 # All values stored in repo Settings → Secrets and variables → Actions.
 # Never inline any of them here, even as examples.
 
-name: Release (signed + notarized universal macOS build)
+name: Release (signed + notarized per-arch macOS builds)
 
 on:
   push:
@@ -43,13 +45,18 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build + draft release (universal macOS, signed + notarized)
-    # Pinned runner (not `macos-latest`) so the build environment is stable
-    # across GitHub's runner rollouts. Bump deliberately when needed.
-    runs-on: macos-15
-    timeout-minutes: 90
-
+  # Job 1: figure out the changelog ONCE, on a free Linux runner, and
+  # pass it to the macOS build matrix + final release step via job
+  # outputs. Doing it in each matrix entry would duplicate the work and
+  # risk cliff drift between them.
+  changelog:
+    name: Compute changelog
+    runs-on: ubuntu-latest
+    outputs:
+      first_release: ${{ steps.previous_tag.outputs.first_release }}
+      # Fallback to the literal "first release" string when changelog
+      # step was skipped (very first tag has no ancestor to diff against).
+      content: ${{ steps.changelog.outputs.content || 'first release' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,37 +64,6 @@ jobs:
           # Full history is required so git-cliff (and `git describe`) can
           # walk back to the previous tag and compute the changelog range.
           fetch-depth: 0
-
-      - name: Install Bun
-        # Reads the version from the checked-in `.bun-version` file —
-        # bumping Bun is a one-line change to that file, reviewed like any
-        # other source change.
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Rust toolchain (universal targets)
-        # Both targets are required so cargo can produce two binaries that
-        # tauri-action then `lipo`s into a single universal binary.
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Cache Cargo registry + build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          # Cache key carries runner.arch + the target triple so caches are
-          # never reused across architectures or build targets. Different
-          # target triple from the manual workflow → first run of this
-          # workflow will cold-build, which is intentional.
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-universal-apple-darwin-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-universal-apple-darwin-
-
-      - name: Install frontend dependencies
-        run: bun install
 
       - name: Determine previous tag (for changelog range)
         id: previous_tag
@@ -122,12 +98,62 @@ jobs:
           config: cliff.toml
           args: --strip header ${{ steps.previous_tag.outputs.previous_tag }}..${{ github.ref_name }}
 
-      - name: Tauri build (universal, signed + notarized)
+  # Job 2: build + sign + notarize each macOS arch in parallel. Each
+  # matrix entry produces ONE per-arch .dmg; the matching .dmg name
+  # contains the arch suffix (Tauri bundler default — `_aarch64` /
+  # `_x64`). `fail-fast: false` so a flake on one arch doesn't cancel
+  # the other; the `release` job's `needs:` will simply not be
+  # satisfied and no draft is created — re-run the failing entry.
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [changelog]
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        # Reads the version from the checked-in `.bun-version` file —
+        # bumping Bun is a one-line change to that file, reviewed like any
+        # other source change.
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          # Cache key carries the target triple so the two matrix entries
+          # keep separate caches. Different triples = different compiled
+          # artifacts; sharing the cache would just cause misses every time.
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-${{ matrix.target }}-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Tauri build (signed + notarized)
         # tauri-action handles: cert decode + temp keychain import +
-        # `bun tauri build` + `lipo` of the two arch binaries + signing +
-        # notarization + stapling. Skipping `tagName` means the action does
-        # NOT create a release itself — softprops/action-gh-release does
-        # that in the next step.
+        # `bun tauri build` + signing + notarization + stapling. Skipping
+        # `tagName` means the action does NOT create a release itself —
+        # the dedicated `release` job below does that, once both matrix
+        # entries succeed.
         uses: tauri-apps/tauri-action@v0
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -137,23 +163,183 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Updater bundle signing (minisign). Without these set, the
+          # "app" target in tauri.conf.json bundle.targets refuses to
+          # produce .app.tar.gz + .sig — set both secrets before cutting
+          # the first tag after this lands.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          # Universal binary — single .dmg runs on both Apple Silicon and
-          # Intel Macs. Doubles cold-build time vs arm64-only, but ships a
-          # single artifact users can download regardless of hardware.
-          args: --target universal-apple-darwin
+          args: --target ${{ matrix.target }}
 
-      - name: Create draft release with .dmg attached
+      - name: Add stable-named DMG copies
+        # The README pins its download badges to:
+        #   /releases/latest/download/agent-terminal-{aarch64,x64}.dmg
+        # That redirect resolves to the asset on whichever release is marked
+        # "Latest" — but only if the filename is stable across releases.
+        # The bundler-produced names (`Agent Terminal_0.1.4_aarch64.dmg`)
+        # change every version, so we ship side-by-side copies with
+        # versionless names. Keeps both audiences happy: the version-stamped
+        # download for the release page, the stable filename for the README.
+        run: |
+          set -euo pipefail
+          cd src-tauri/target/${{ matrix.target }}/release/bundle/dmg
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) STABLE=agent-terminal-aarch64.dmg ;;
+            x86_64-apple-darwin)  STABLE=agent-terminal-x64.dmg ;;
+            *) echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+          esac
+          src=$(ls *.dmg | head -n 1)
+          cp -- "$src" "$STABLE"
+          ls -la
+
+      - name: Suffix updater bundle with arch
+        # Tauri appends `_aarch64` / `_x64` to DMG filenames automatically
+        # but does NOT do the same for `.app.tar.gz` — both matrix entries
+        # produce `<ProductName>.app.tar.gz`. Two consequences:
+        #   1. GitHub Releases reject a second asset with a duplicate name,
+        #      so only one tarball would attach to the draft release.
+        #   2. The manifest script can't tell the arches apart by filename.
+        # Rename here so downstream steps (upload, release attach, manifest
+        # generation) can all rely on a stable arch suffix.
+        run: |
+          set -euo pipefail
+          cd src-tauri/target/${{ matrix.target }}/release/bundle/macos
+          case "${{ matrix.target }}" in
+            aarch64-apple-darwin) ARCH=aarch64 ;;
+            x86_64-apple-darwin)  ARCH=x64 ;;
+            *) echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+          esac
+          for f in *.app.tar.gz; do
+            base="${f%.app.tar.gz}"
+            mv -- "$f"     "${base}_${ARCH}.app.tar.gz"
+            mv -- "$f.sig" "${base}_${ARCH}.app.tar.gz.sig"
+          done
+          ls -la
+
+      - name: Upload .dmg + updater bundle as workflow artifact
+        # Hands every release artifact for this arch off to the `release`
+        # job (Linux runner, can't reach into this macOS runner's
+        # filesystem directly). Short retention because everything also
+        # lands on the GitHub Release within minutes — workflow artifacts
+        # are a job-to-job carrier, not a long-term archive.
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  # Job 3: create the draft release with BOTH .dmgs attached. Lives
+  # outside the matrix because softprops/action-gh-release running inside
+  # the matrix would create two separate releases (one per matrix entry)
+  # and the second would 422 because the tag already has a release.
+  # Linux runner — this job just downloads artifacts + POSTs to the API.
+  release:
+    name: Create draft release
+    needs: [changelog, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bundles-*
+          path: artifacts
+          # `merge-multiple` flattens the per-matrix subdirectories so
+          # the final `files:` glob doesn't need a level of indirection.
+          merge-multiple: true
+
+      - name: Generate latest.json manifest
+        # Discovers asset filenames from the downloaded artifacts so the
+        # script doesn't have to predict Tauri's productName-to-filename
+        # sanitisation (current bundler converts "Agent Terminal" →
+        # "Agent.Terminal" in DMGs; .app.tar.gz follows the same shape).
+        # The URLs embedded in the manifest use the basenames of the
+        # discovered files, which is what GitHub serves as
+        # /releases/download/<tag>/<basename>.
+        #
+        # `find` (not a flat ls) because upload-artifact@v4 strips only the
+        # longest common parent of the uploaded paths — here that's
+        # `release/bundle/`, so files land under `artifacts/dmg/...` and
+        # `artifacts/macos/...` after download, not flat in `artifacts/`.
+        run: |
+          set -euo pipefail
+          mkdir -p manifest
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          AARCH64_TAR=$(find artifacts -type f -name '*aarch64*.app.tar.gz' | head -n 1)
+          X64_TAR=$(find artifacts -type f -name '*x64*.app.tar.gz' | head -n 1)
+          AARCH64_BASENAME=$(basename "${AARCH64_TAR}")
+          X64_BASENAME=$(basename "${X64_TAR}")
+          AARCH64_SIG=$(cat "${AARCH64_TAR}.sig")
+          X64_SIG=$(cat "${X64_TAR}.sig")
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          jq -n \
+            --arg version "${VERSION}" \
+            --arg notes "${RELEASE_NOTES}" \
+            --arg pub_date "${PUB_DATE}" \
+            --arg aarch64_sig "${AARCH64_SIG}" \
+            --arg aarch64_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${AARCH64_BASENAME}" \
+            --arg x64_sig "${X64_SIG}" \
+            --arg x64_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${X64_BASENAME}" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { signature: $aarch64_sig, url: $aarch64_url },
+                "darwin-x86_64":  { signature: $x64_sig,     url: $x64_url     }
+              }
+            }' > manifest/latest.json
+
+          echo "Generated latest.json:"
+          cat manifest/latest.json
+        env:
+          RELEASE_NOTES: ${{ needs.changelog.outputs.content }}
+
+      - name: Create draft release with .dmgs + updater bundles + manifest
         uses: softprops/action-gh-release@v2
         with:
-          # DRAFT — never auto-publish. The user reviews the body, edits if
-          # needed, and clicks Publish in the GitHub UI.
+          # DRAFT — never auto-publish. The user reviews the body, edits
+          # if needed, and clicks Publish in the GitHub UI.
           draft: true
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          # First release → literal "first release" body. Otherwise → the
-          # git-cliff-rendered changelog. The `||` fallback fires when the
-          # changelog step was skipped (its output is empty in that case).
-          body: ${{ steps.changelog.outputs.content || 'first release' }}
-          files: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          body: ${{ needs.changelog.outputs.content }}
+          # Attach .dmg (installs), .app.tar.gz (updater payload),
+          # .app.tar.gz.sig (minisign signature), and latest.json (the
+          # manifest — duplicated here as an audit copy of what was
+          # published to the release-manifest branch).
+          #
+          # `artifacts/**/*` because upload-artifact@v4 preserves the
+          # per-arch `dmg/` and `macos/` subdirectories (longest common
+          # parent of the uploaded paths is `release/bundle/`).
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.app.tar.gz.sig
+            manifest/latest.json
           fail_on_unmatched_files: true
+
+      - name: Publish manifest to release-manifest branch
+        # Sidesteps GitHub's /releases/latest/download/ redirect (which
+        # excludes pre-releases). The manifest is served at:
+        #
+        #   https://raw.githubusercontent.com/${{ github.repository }}/release-manifest/latest.json
+        #
+        # raw.githubusercontent.com caches for ~5 min — installed apps
+        # see new releases within that window. The release-manifest
+        # branch must exist as an empty orphan branch before the first
+        # run; creating it from main would carry the codebase into the
+        # manifest branch (handled in the bootstrap step documented
+        # alongside this change).
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: release-manifest
+          publish_dir: ./manifest
+          commit_message: "release: ${{ github.ref_name }} manifest"
