@@ -36,6 +36,15 @@ struct SessionState {
     pending_question: Option<String>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TurnAction {
+    SessionStart,
+    InProgress,
+    Awaiting,
+    Completed,
+    SessionEnd,
+}
+
 // ─── Mod ─────────────────────────────────────────────────────────────────────
 
 /// Tracks per-session agent turn state via hook events.
@@ -46,6 +55,13 @@ pub struct AgentTurnMod {
     emitters: HashMap<String, AsyncEmitter>,
     /// session_id → SessionState (populated on SessionStart).
     sessions: HashMap<String, SessionState>,
+    /// tab_id → last known cwd (updated via on_cwd_changed). Enables guarded
+    /// fallback correlation for agents whose hook scripts lose the tab env.
+    tab_cwds: HashMap<String, String>,
+    /// tab_id → canonical agent id currently detected in the process tree.
+    /// Tracked via ProcessInspectorMod signals so cwd-based fallbacks only
+    /// engage when the matching tab is actually running that agent.
+    active_agents: HashMap<String, String>,
     /// OS notification service. Optional so unit tests can construct a
     /// `AgentTurnMod` without a Tauri AppHandle. In production, set via
     /// `with_notifications` during engine wiring in `lib.rs`.
@@ -57,6 +73,8 @@ impl AgentTurnMod {
         Self {
             emitters: HashMap::new(),
             sessions: HashMap::new(),
+            tab_cwds: HashMap::new(),
+            active_agents: HashMap::new(),
             notifications: None,
         }
     }
@@ -95,6 +113,33 @@ impl AgentTurnMod {
                 return Some(state.tab_id.clone());
             }
         }
+        let Some(agent) = Self::canonical_agent(payload.agent.as_str()) else {
+            return None;
+        };
+        let Some(cwd_raw) = payload.cwd.as_deref().filter(|s| !s.is_empty()) else {
+            return None;
+        };
+        let cwd = Self::normalize_cwd_str(cwd_raw);
+        let mut matches: Vec<String> = self
+            .tab_cwds
+            .iter()
+            .filter_map(|(tab_id, tab_cwd)| {
+                if tab_cwd == &cwd && self.emitters.contains_key(tab_id) {
+                    match self.active_agents.get(tab_id) {
+                        Some(current) if current.as_str() == agent => Some(tab_id.clone()),
+                        Some(_) => None,
+                        None => Some(tab_id.clone()),
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        matches.sort();
+        matches.dedup();
+        if matches.len() == 1 {
+            return matches.into_iter().next();
+        }
         None
     }
 
@@ -107,10 +152,108 @@ impl AgentTurnMod {
             .unwrap_or_else(|| format!("synthetic:{tab_id}"))
     }
 
+    fn canonical_agent(agent: &str) -> Option<&'static str> {
+        let canonical = agent.trim().to_ascii_lowercase();
+        match canonical.as_str() {
+            "claude-code" | "claude" | "claudecode" | "claudecli" => Some("claude-code"),
+            "codex" | "codex-cli" | "codexcli" | "openai-codex" => Some("codex"),
+
+            _ => None,
+        }
+    }
+
+    fn normalize_token(value: &str) -> String {
+        let mut normalized = String::with_capacity(value.len());
+        for ch in value.chars() {
+            if ch.is_ascii_alphanumeric() {
+                normalized.push(ch.to_ascii_lowercase());
+            }
+        }
+        normalized
+    }
+
+    fn normalize_cwd_str(cwd: &str) -> String {
+        if cwd == "/" {
+            return cwd.to_string();
+        }
+        cwd.trim_end_matches('/').to_string()
+    }
+
+    fn normalized_tool_name(payload: &HookPayload) -> Option<String> {
+        Self::tool_name(payload).map(Self::normalize_token)
+    }
+
+    fn is_user_question_tool(payload: &HookPayload) -> bool {
+        Self::normalized_tool_name(payload)
+            .map(|name| name.contains("ask") && name.contains("question"))
+            .unwrap_or(false)
+    }
+
+    fn tool_name(payload: &HookPayload) -> Option<&str> {
+        payload.tool_name.as_deref().or_else(|| {
+            payload
+                .tool_call
+                .as_ref()
+                .and_then(|v| v.get("name"))
+                .and_then(|n| n.as_str())
+        })
+    }
+
+    fn is_permission_request(payload: &HookPayload) -> bool {
+        let Some(name) = Self::normalized_tool_name(payload) else {
+            return false;
+        };
+        matches!(
+            name.as_str(),
+            "askpermission"
+                | "askuserpermission"
+                | "requestpermission"
+                | "requestpermissions"
+                | "askquestion"
+                | "askuserquestion"
+                | "askapproval"
+                | "askuserapproval"
+        ) || (name.contains("permission") && (name.contains("ask") || name.contains("request")))
+    }
+
+    fn normalize_action(payload: &HookPayload) -> Option<TurnAction> {
+        let agent = Self::canonical_agent(payload.agent.as_str())?;
+        let event_key = Self::normalize_token(payload.event.as_str());
+        if event_key.is_empty() {
+            return None;
+        }
+
+        match agent {
+            "claude-code" | "codex" => match event_key.as_str() {
+                "sessionstart" => Some(TurnAction::SessionStart),
+                "userpromptsubmit" => Some(TurnAction::InProgress),
+                "pretooluse" => {
+                    if Self::is_permission_request(payload) {
+                        Some(TurnAction::Awaiting)
+                    } else {
+                        Some(TurnAction::InProgress)
+                    }
+                }
+                "notification"
+                | "permissionrequest"
+                | "permissionrequested"
+                | "permissionasked" => Some(TurnAction::Awaiting),
+                "stop" | "sessionstop" => Some(TurnAction::Completed),
+                "sessionend" | "sessionended" => Some(TurnAction::SessionEnd),
+                _ => None,
+            },
+
+
+            _ => None,
+        }
+    }
+
     // ── Emit helper ───────────────────────────────────────────────────────────
 
     fn emit_state(&self, tab_id: &str, state: &str, message: Option<&str>) {
-        let Some(emitter) = self.emitters.get(tab_id) else { return };
+        let Some(emitter) = self.emitters.get(tab_id) else {
+            return;
+        };
         let mut data = serde_json::json!({ "state": state });
         if let Some(msg) = message {
             data["message"] = serde_json::Value::String(msg.to_string());
@@ -121,14 +264,10 @@ impl AgentTurnMod {
     /// Forward a state transition to the OS notification service. Caller
     /// passes the agent_id from the hook payload — `NotificationService`
     /// resolves the human-readable display name from the registry.
-    fn notify(
-        &self,
-        tab_id: &str,
-        agent_id: &str,
-        state: AgentNotifyState,
-        message: Option<&str>,
-    ) {
-        let Some(svc) = self.notifications.as_ref() else { return };
+    fn notify(&self, tab_id: &str, agent_id: &str, state: AgentNotifyState, message: Option<&str>) {
+        let Some(svc) = self.notifications.as_ref() else {
+            return;
+        };
         svc.clone().maybe_notify(
             tab_id.to_string(),
             agent_id.to_string(),
@@ -146,25 +285,43 @@ impl Mod for AgentTurnMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
-        self.emitters.insert(ctx.tab_id.to_string(), ctx.async_emitter());
+        let tab_id = ctx.tab_id.to_string();
+        self.emitters.insert(tab_id.clone(), ctx.async_emitter());
+        self.tab_cwds.entry(tab_id.clone()).or_default();
+        self.active_agents.remove(&tab_id);
     }
 
     fn on_close(&mut self, ctx: &ModContext) {
         self.emitters.remove(ctx.tab_id);
         self.sessions.retain(|_, s| s.tab_id != ctx.tab_id);
+        self.tab_cwds.remove(ctx.tab_id);
+        self.active_agents.remove(ctx.tab_id);
+    }
+
+    fn on_cwd_changed(&mut self, cwd: &str, ctx: &ModContext) {
+        let normalized = Self::normalize_cwd_str(cwd);
+        self.tab_cwds
+            .insert(ctx.tab_id.to_string(), normalized);
+    }
+
+    fn on_agent_detected(&mut self, agent: &str, _cwd: &str, _cmd: &str, ctx: &ModContext) {
+        if let Some(canonical) = Self::canonical_agent(agent) {
+            self.active_agents
+                .insert(ctx.tab_id.to_string(), canonical.to_string());
+        }
     }
 
     fn on_agent_cleared(&mut self, _agent: &str, ctx: &ModContext) {
         // Fallback cleanup if SessionEnd hook was missed (e.g. agent crashed).
         self.sessions.retain(|_, s| s.tab_id != ctx.tab_id);
+        self.active_agents.remove(ctx.tab_id);
     }
 
     fn on_hook_event(&mut self, payload: &HookPayload) {
         // Filter to known agents so stray POSTs from other tools don't affect state.
-        match payload.agent.as_str() {
-            "claude-code" | "codex" => {}
-            _ => return,
-        }
+        let Some(action) = Self::normalize_action(payload) else {
+            return;
+        };
 
         // Cross-terminal-noise gate. Drop any payload that we can't correlate
         // to a tab WE own — claude/codex sessions running in iTerm,
@@ -173,14 +330,14 @@ impl Mod for AgentTurnMod {
         // discarded. session_id falls through as a secondary correlation
         // path inside `tab_id_for` for events whose subprocess lost the
         // env var.
-        if self.tab_id_for(payload).is_none() {
+        let Some(tab_id) = self.tab_id_for(payload) else {
             return;
-        }
+        };
 
         // Forward model from any hook event that includes one. This runs
         // before the event-type dispatch below so every event has a chance
         // to update the model — not just SessionStart or UserPromptSubmit.
-        if let (Some(tab_id), Some(model)) = (self.tab_id_for(payload), &payload.model) {
+        if let Some(model) = &payload.model {
             if !model.trim().is_empty() {
                 if let Some(emitter) = self.emitters.get(&tab_id) {
                     emitter.emit(
@@ -192,22 +349,18 @@ impl Mod for AgentTurnMod {
             }
         }
 
-        match payload.event.as_str() {
-            "SessionStart" => self.handle_session_start(payload),
-            "UserPromptSubmit" => self.handle_in_progress(payload),
-            "PreToolUse" => {
-                if payload.tool_name.as_deref() == Some("AskUserQuestion") {
+        match action {
+            TurnAction::SessionStart => self.handle_session_start(payload),
+            TurnAction::InProgress => {
+                if Self::is_user_question_tool(payload) {
                     self.handle_save_question(payload);
                 } else {
                     self.handle_in_progress(payload);
                 }
             }
-            // Claude calls it Notification, Codex calls it PermissionRequest —
-            // same role, same handler.
-            "Notification" | "PermissionRequest" => self.handle_awaiting(payload),
-            "Stop" => self.handle_completed(payload),
-            "SessionEnd" => self.handle_session_end(payload),
-            _ => {}
+            TurnAction::Awaiting => self.handle_awaiting(payload),
+            TurnAction::Completed => self.handle_completed(payload),
+            TurnAction::SessionEnd => self.handle_session_end(payload),
         }
     }
 }
@@ -216,17 +369,22 @@ impl Mod for AgentTurnMod {
 
 impl AgentTurnMod {
     fn handle_session_start(&mut self, payload: &HookPayload) {
-        let Some(session_id) = payload.session_id.clone() else { return };
         // `tab_id_for` is the same lookup the on_hook_event gate already ran;
         // calling it again here means SessionStart works even if a future
         // refactor weakens the gate (e.g. lets through a payload that only
         // has session_id). The `_` discard is intentional — by the time we
         // reach this handler the gate has guaranteed Some(_).
-        let Some(tab_id) = self.tab_id_for(payload) else { return };
+        let Some(tab_id) = self.tab_id_for(payload) else {
+            return;
+        };
 
+        let key = Self::session_key(payload, &tab_id);
         self.sessions.insert(
-            session_id,
-            SessionState { tab_id: tab_id.clone(), pending_question: None },
+            key,
+            SessionState {
+                tab_id: tab_id.clone(),
+                pending_question: None,
+            },
         );
         self.emit_state(&tab_id, "idle", None);
         // Notify with `Idle` so transition detection has the right baseline.
@@ -236,7 +394,9 @@ impl AgentTurnMod {
 
     fn handle_in_progress(&mut self, payload: &HookPayload) {
         // Step 1 — resolve tab_id (immutable borrow).
-        let Some(tab_id) = self.tab_id_for(payload) else { return };
+        let Some(tab_id) = self.tab_id_for(payload) else {
+            return;
+        };
 
         // Step 2 — mutate / create session (mutable borrow, drops before emit).
         {
@@ -254,9 +414,13 @@ impl AgentTurnMod {
     }
 
     fn handle_save_question(&mut self, payload: &HookPayload) {
-        let Some(tab_id) = self.tab_id_for(payload) else { return };
+        let Some(tab_id) = self.tab_id_for(payload) else {
+            return;
+        };
         let Some(msg) = &payload.message else { return };
-        if msg.trim().is_empty() { return; }
+        if msg.trim().is_empty() {
+            return;
+        }
 
         let msg = msg.clone();
         let key = Self::session_key(payload, &tab_id);
@@ -269,7 +433,9 @@ impl AgentTurnMod {
     }
 
     fn handle_awaiting(&mut self, payload: &HookPayload) {
-        let Some(tab_id) = self.tab_id_for(payload) else { return };
+        let Some(tab_id) = self.tab_id_for(payload) else {
+            return;
+        };
 
         // Step 2 — take pending_question out of session (mutable).
         let message: Option<String> = {
@@ -299,8 +465,12 @@ impl AgentTurnMod {
     }
 
     fn handle_completed(&mut self, payload: &HookPayload) {
-        let Some(tab_id) = self.tab_id_for(payload) else { return };
-        let Some(emitter) = self.emitters.get(&tab_id).cloned() else { return };
+        let Some(tab_id) = self.tab_id_for(payload) else {
+            return;
+        };
+        let Some(emitter) = self.emitters.get(&tab_id).cloned() else {
+            return;
+        };
 
         // Prefer direct payload field (Codex), then transcript file (Claude).
         let direct_msg = payload
@@ -348,7 +518,13 @@ impl AgentTurnMod {
         // actually want to handle.
         let tab_id = self.tab_id_for(payload);
 
-        // Remove the session.
+        // Remove the session by whichever identifier we have — real session_id
+        // when provided, otherwise the synthetic `<tab_id>` key used by
+        // `session_key` when agents omit session identifiers.
+        if let Some(ref tid) = tab_id {
+            let key = Self::session_key(payload, tid.as_str());
+            self.sessions.remove(&key);
+        }
         if let Some(sid) = &payload.session_id {
             self.sessions.remove(sid.as_str());
         }
@@ -386,8 +562,12 @@ async fn read_last_assistant_message(transcript_path: &str) -> Option<String> {
             Err(_) => continue,
         };
 
-        let Some(message) = entry.get("message") else { continue };
-        let Some(role) = message.get("role").and_then(|r| r.as_str()) else { continue };
+        let Some(message) = entry.get("message") else {
+            continue;
+        };
+        let Some(role) = message.get("role").and_then(|r| r.as_str()) else {
+            continue;
+        };
         if role != "assistant" {
             continue;
         }
@@ -507,12 +687,14 @@ this line is not json at all
             tab_id: tab_id.map(|s| s.to_string()),
             session_id: session_id.map(|s| s.to_string()),
             cwd: Some("/some/dir".to_string()),
+            tool_call: None,
             tool_name: None,
             message: None,
             transcript_path: None,
             last_assistant_message: None,
             prompt: None,
             model: None,
+            fully_idle: None,
         }
     }
 
@@ -528,6 +710,7 @@ this line is not json at all
             tab_id.to_string(),
             AsyncEmitter::new_for_test(tab_id.to_string(), tx),
         );
+        m.tab_cwds.entry(tab_id.to_string()).or_default();
         rx
     }
 
@@ -607,6 +790,86 @@ this line is not json at all
             Some("proj:tab-1"),
         );
     }
+    #[test]
+    fn permission_detection_is_case_insensitive() {
+        let mut p = payload(
+            "claude-code",
+            "PreToolUse",
+            Some("proj:tab-1"),
+            Some("session-perm"),
+        );
+        p.tool_name = Some("Ask_User_Permission".to_string());
+        assert!(AgentTurnMod::is_permission_request(&p));
+    }
+
+    #[test]
+    fn question_tool_detection_handles_variants() {
+        let mut p = payload(
+            "claude-code",
+            "PreToolUse",
+            Some("proj:tab-1"),
+            Some("session-q"),
+        );
+        p.tool_name = Some("ask_user_question".to_string());
+        assert!(AgentTurnMod::is_user_question_tool(&p));
+    }
+    #[test]
+    fn session_start_without_session_id_uses_synthetic_key() {
+        let mut m = AgentTurnMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+
+        m.on_hook_event(&payload(
+            "claude-code",
+            "SessionStart",
+            Some("proj:tab-1"),
+            None,
+        ));
+
+        assert!(
+            m.sessions.contains_key("synthetic:proj:tab-1"),
+            "session should be created with synthetic key when session_id is missing",
+        );
+
+        let ev = rx.try_recv().expect("expected idle emission");
+        assert_eq!(ev.event, "agent_state_changed");
+        assert_eq!(ev.data["state"], "idle");
+    }
+
+    #[test]
+    fn session_end_without_session_id_clears_synthetic_session() {
+        let mut m = AgentTurnMod::new();
+        let mut rx = register_tab(&mut m, "proj:tab-1");
+
+        m.on_hook_event(&payload(
+            "claude-code",
+            "SessionStart",
+            Some("proj:tab-1"),
+            None,
+        ));
+        let first = rx
+            .try_recv()
+            .expect("expected idle emission after SessionStart");
+        assert_eq!(first.event, "agent_state_changed");
+        assert_eq!(first.data["state"], "idle");
+
+        m.on_hook_event(&payload(
+            "claude-code",
+            "SessionEnd",
+            Some("proj:tab-1"),
+            None,
+        ));
+
+        assert!(
+            !m.sessions.contains_key("synthetic:proj:tab-1"),
+            "session should be removed on SessionEnd even without session_id",
+        );
+
+        let ev = rx
+            .try_recv()
+            .expect("expected idle emission after SessionEnd");
+        assert_eq!(ev.event, "agent_state_changed");
+        assert_eq!(ev.data["state"], "idle");
+    }
 
     #[test]
     fn session_id_fallback_after_session_start() {
@@ -634,7 +897,12 @@ this line is not json at all
         // The session record was reused (still 1 entry), pending_question
         // cleared by handle_in_progress.
         assert_eq!(m.sessions.len(), 1);
-        assert!(m.sessions.get("session-y").unwrap().pending_question.is_none());
+        assert!(m
+            .sessions
+            .get("session-y")
+            .unwrap()
+            .pending_question
+            .is_none());
     }
 
     #[test]

@@ -46,10 +46,10 @@ axum = "0.8"
 dirs = "5"
 encoding_rs = "0.8"
 sysinfo = "0.33"
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 user-notify = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4"
-

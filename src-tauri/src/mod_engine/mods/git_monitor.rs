@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::mod_engine::{AsyncEmitter, Mod, ModContext};
 use crate::mod_engine::osc_parser::OscParser;
+use crate::mod_engine::{AsyncEmitter, Mod, ModContext};
 use tokio::sync::watch;
 
 /// Baseline refresh interval when no PR checks are pending.
@@ -52,7 +52,9 @@ pub struct GitMonitorMod {
 
 impl GitMonitorMod {
     pub fn new() -> Self {
-        Self { tabs: HashMap::new() }
+        Self {
+            tabs: HashMap::new(),
+        }
     }
 }
 
@@ -62,11 +64,7 @@ impl GitMonitorMod {
 /// Lives as a free function (not a `&self` method) so callers holding a
 /// `&mut GitTabState` from `self.tabs.get_mut(...)` can call it without
 /// triggering a `self` re-borrow conflict.
-fn spawn_git_query(
-    cwd: String,
-    emitter: AsyncEmitter,
-    interval_tx: watch::Sender<u64>,
-) {
+fn spawn_git_query(cwd: String, emitter: AsyncEmitter, interval_tx: watch::Sender<u64>) {
     tokio::spawn(async move {
         let data = query_git_info(&cwd).await;
         let desired = desired_interval_secs(&data);
@@ -231,7 +229,11 @@ impl Mod for GitMonitorMod {
 
         // Fire an immediate git query for the new directory.
         state.last_query_at = Some(Instant::now());
-        spawn_git_query(cwd.to_string(), ctx.async_emitter(), state.interval_tx.clone());
+        spawn_git_query(
+            cwd.to_string(),
+            ctx.async_emitter(),
+            state.interval_tx.clone(),
+        );
     }
 
     fn on_close(&mut self, ctx: &ModContext) {
@@ -273,7 +275,10 @@ async fn query_git_info(cwd: &str) -> serde_json::Value {
     // 2. Run parallel queries
     let (branch, counts, dirty, worktree_out) = tokio::join!(
         run_git(&["branch", "--show-current"], &root),
-        run_git(&["rev-list", "--count", "--left-right", "HEAD...@{u}"], &root),
+        run_git(
+            &["rev-list", "--count", "--left-right", "HEAD...@{u}"],
+            &root
+        ),
         run_git(&["status", "--short"], &root),
         run_git(&["worktree", "list", "--porcelain"], &root),
     );
@@ -412,16 +417,9 @@ fn summarise_checks(items: &[serde_json::Value]) -> serde_json::Value {
             .unwrap_or("");
         match s {
             "SUCCESS" => c.passing += 1,
-            "FAILURE"
-            | "ERROR"
-            | "CANCELLED"
-            | "TIMED_OUT"
-            | "ACTION_REQUIRED"
-            | "STARTUP_FAILURE"
-            | "STALE" => c.failing += 1,
-            "PENDING" | "IN_PROGRESS" | "QUEUED" | "WAITING" | "EXPECTED" => {
-                c.pending += 1
-            }
+            "FAILURE" | "ERROR" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED"
+            | "STARTUP_FAILURE" | "STALE" => c.failing += 1,
+            "PENDING" | "IN_PROGRESS" | "QUEUED" | "WAITING" | "EXPECTED" => c.pending += 1,
             "SKIPPED" | "NEUTRAL" => c.skipped += 1,
             _ => {}
         }

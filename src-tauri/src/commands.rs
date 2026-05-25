@@ -3,8 +3,8 @@ use crate::pty_manager::{spawn_pty, try_reattach, PtyDataPayload, PtyMap, Reatta
 use portable_pty::PtySize;
 use std::io::Write;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, State};
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 pub async fn open_tab(
@@ -45,7 +45,8 @@ pub async fn open_tab(
             // inside try_reattach — no listener timing gap. This event is emitted
             // for any future consumers that want to react to reconnects without
             // rendering text (e.g. status bar state, telemetry).
-            app.emit("pty:reconnected", serde_json::json!({ "tabId": &tab_id })).ok();
+            app.emit("pty:reconnected", serde_json::json!({ "tabId": &tab_id }))
+                .ok();
             return Ok(false);
         }
         Ok(ReattachResult::Expired) | Ok(ReattachResult::NotFound) => {
@@ -78,7 +79,10 @@ pub async fn write_pty(
     {
         let mut map = pty_map.lock().unwrap();
         if let Some(handle) = map.get_mut(&tab_id) {
-            handle.writer.write_all(&data_bytes).map_err(|e| e.to_string())?;
+            handle
+                .writer
+                .write_all(&data_bytes)
+                .map_err(|e| e.to_string())?;
         } else {
             return Ok(()); // Tab already closed — no-op, not an error.
         }
@@ -100,7 +104,12 @@ pub async fn resize_pty(
         if let Some(handle) = map.get(&tab_id) {
             handle
                 .master
-                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
                 .map_err(|e| e.to_string())?;
         } else {
             return Ok(()); // Tab already closed — no-op, not an error.
@@ -111,10 +120,7 @@ pub async fn resize_pty(
 }
 
 #[tauri::command]
-pub async fn close_tab(
-    pty_map: State<'_, PtyMap>,
-    tab_id: String,
-) -> Result<(), String> {
+pub async fn close_tab(pty_map: State<'_, PtyMap>, tab_id: String) -> Result<(), String> {
     // The reader thread reads `closing` on EOF to decide between emitting
     // pty:exit (user close, current path) and respawning the shell at the
     // last known cwd (self-exit). Setting the flag and dropping the entry
@@ -134,9 +140,13 @@ pub async fn close_tab(
 pub async fn save_projects(projects: serde_json::Value) -> Result<(), String> {
     let path = projects_config_path()?;
     let parent = path.parent().unwrap().to_owned();
-    tokio::fs::create_dir_all(&parent).await.map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&parent)
+        .await
+        .map_err(|e| e.to_string())?;
     let json = serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?;
-    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, json)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -146,7 +156,9 @@ pub async fn list_projects() -> Result<serde_json::Value, String> {
     if !path.exists() {
         return Ok(serde_json::json!([]));
     }
-    let raw = tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())?;
+    let raw = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| e.to_string())?;
     serde_json::from_str(&raw).map_err(|e| e.to_string())
 }
 

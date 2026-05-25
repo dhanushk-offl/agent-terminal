@@ -5,7 +5,13 @@ import type { AgentState } from '@/components/agent.helpers'
  * Brand marks — exact SVG paths from the official brand assets
  * -------------------------------------------------------------------------*/
 
-function ClaudeMark({ size, fill }: { size: number; fill: string }) {
+function ClaudeMark({
+  size,
+  fill = 'currentColor',
+}: {
+  size: number
+  fill?: string
+}) {
   return (
     <svg
       width={size}
@@ -23,7 +29,13 @@ function ClaudeMark({ size, fill }: { size: number; fill: string }) {
   )
 }
 
-function CodexMark({ size, fill }: { size: number; fill: string }) {
+function CodexMark({
+  size,
+  fill = 'currentColor',
+}: {
+  size: number
+  fill?: string
+}) {
   return (
     <svg
       width={size}
@@ -58,15 +70,11 @@ const BRAND: Record<string, { color: string; glow: string }> = {
  */
 const MARKS: Record<
   string,
-  React.ComponentType<{ size: number; fill: string }>
+  React.ComponentType<{ size: number; fill?: string }>
 > = {
   'claude-code': ClaudeMark,
   codex: CodexMark,
 }
-
-/* ---------------------------------------------------------------------------
- * Fallback for unknown agents — backwards-compatible violet sparkle
- * -------------------------------------------------------------------------*/
 
 function SparkleFallback({
   state,

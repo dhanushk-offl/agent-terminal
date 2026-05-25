@@ -52,6 +52,10 @@ impl Mod for ClaudeCodeMod {
         if agent != "claude-code" {
             return;
         }
-        ctx.emit("claude_code", "tab_type_changed", serde_json::json!({ "type": "shell" }));
+        ctx.emit(
+            "claude_code",
+            "tab_type_changed",
+            serde_json::json!({ "type": "shell" }),
+        );
     }
 }

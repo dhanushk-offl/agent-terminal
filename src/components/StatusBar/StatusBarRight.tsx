@@ -231,6 +231,7 @@ export function StatusBarRight() {
     status,
     agentCmd,
     agentId,
+    agentDisplayName,
     agentModel,
     processes,
     listeningPorts,
@@ -249,7 +250,19 @@ export function StatusBarRight() {
   const proc = processes?.[0]
   if (proc) {
     const ports = listeningPorts ?? []
-    items.push(...buildProcItems(proc, ports))
+    const displayName = agentDisplayName ?? proc.name
+    items.push(
+      <span
+        key="proc"
+        className="flex items-center gap-1"
+        style={{ fontFamily: MONO_FONT }}
+      >
+        <span>{displayName}</span>
+        <span style={{ opacity: 0.6 }}>{proc.pid}</span>
+      </span>,
+    )
+    const extra = buildProcItems(proc, ports).slice(2)
+    items.push(...extra)
   } else if (status !== 'idle') {
     // ── Tab with no process data yet — show status text ───────────────────
     const statusColor: Record<string, string> = {

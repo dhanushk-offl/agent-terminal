@@ -3,6 +3,7 @@ mod claude_code;
 mod codex;
 mod dir_tracker;
 mod git_monitor;
+mod port_scanner;
 mod process_tracker;
 mod shell_process;
 

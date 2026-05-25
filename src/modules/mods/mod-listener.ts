@@ -58,6 +58,70 @@ export async function startModListener(): Promise<() => void> {
   })
 }
 
+function handleTabTypeChanged(tabId: string, data: unknown): void {
+  const {
+    type,
+    agent_id: agentId,
+    display_name: agentDisplayName,
+    cmd,
+    model,
+  } = data as {
+    type: TabType
+    agent_id?: string
+    display_name?: string
+    cmd?: string
+    model?: string | null
+  }
+  if (type === 'shell') {
+    updateTabMeta(tabId, {
+      type,
+      agentId: undefined,
+      agentDisplayName: undefined,
+      agentCmd: undefined,
+      // Clear hook-driven state when the agent process exits.
+      agentState: undefined,
+      agentMessage: undefined,
+      agentModel: undefined,
+    })
+  } else {
+    // agentDisplayName comes from the per-agent mod (which sources it
+    // from AGENT_HOOK_CONFIGS). We never look it up consumer-side —
+    // adding a new agent must work with zero changes here.
+    updateTabMeta(tabId, {
+      type,
+      agentId,
+      agentDisplayName,
+      agentCmd: cmd,
+      agentModel: model ?? undefined,
+    })
+  }
+}
+
+function handleProcessInfo(
+  tabId: string,
+  data: { processes: ProcessInfo[] },
+): void {
+  const { processes } = data
+  const ports = processes.flatMap((p) => p.listeningPorts ?? [])
+  const patch: Partial<import('@/modules/stores/$tabMeta').TabMeta> = {
+    processes,
+    listeningPorts: [...new Set(ports)],
+  }
+  const agentProc = processes.find(
+    (p) => p.name === 'claude-code' || p.name === 'codex',
+  )
+  if (agentProc) {
+    patch.agentCmd = agentProc.command
+    patch.agentDisplayName =
+      agentProc.name === 'claude-code'
+        ? 'Claude Code'
+        : agentProc.name === 'codex'
+          ? 'Codex CLI'
+          : agentProc.name
+  }
+  updateTabMeta(tabId, patch)
+}
+
 function dispatch({
   tabId,
   modId: _modId,
@@ -84,37 +148,9 @@ function dispatch({
       }
       break
     }
-    case 'tab_type_changed': {
-      const {
-        type,
-        agent_id: agentId,
-        display_name: agentDisplayName,
-        cmd,
-      } = data as {
-        type: TabType
-        agent_id?: string
-        display_name?: string
-        cmd?: string
-      }
-      if (type === 'shell') {
-        updateTabMeta(tabId, {
-          type,
-          agentId: undefined,
-          agentDisplayName: undefined,
-          agentCmd: undefined,
-          // Clear hook-driven state when the agent process exits.
-          agentState: undefined,
-          agentMessage: undefined,
-          agentModel: undefined,
-        })
-      } else {
-        // agentDisplayName comes from the per-agent mod (which sources it
-        // from AGENT_HOOK_CONFIGS). We never look it up consumer-side —
-        // adding a new agent must work with zero changes here.
-        updateTabMeta(tabId, { type, agentId, agentDisplayName, agentCmd: cmd })
-      }
+    case 'tab_type_changed':
+      handleTabTypeChanged(tabId, data)
       break
-    }
     case 'cwd_changed': {
       const { cwd } = data as { cwd: string }
       updateTabMeta(tabId, { cwd })
@@ -124,22 +160,9 @@ function dispatch({
       updateTabMeta(tabId, { git: (data as GitInfo) ?? undefined })
       break
     }
-    case 'process_info': {
-      const { processes } = data as { processes: ProcessInfo[] }
-      const ports = processes.flatMap((p) => p.listeningPorts ?? [])
-      const patch: Partial<import('@/modules/stores/$tabMeta').TabMeta> = {
-        processes,
-        listeningPorts: [...new Set(ports)],
-      }
-      const agentProc = processes.find(
-        (p) => p.name === 'claude-code' || p.name === 'codex',
-      )
-      if (agentProc) {
-        patch.agentCmd = agentProc.command
-      }
-      updateTabMeta(tabId, patch)
+    case 'process_info':
+      handleProcessInfo(tabId, data as { processes: ProcessInfo[] })
       break
-    }
     case 'listening_ports': {
       const { ports } = data as { ports: number[] }
       updateTabMeta(tabId, { listeningPorts: ports })

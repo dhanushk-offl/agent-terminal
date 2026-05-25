@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::port_scanner;
 use crate::mod_engine::{AsyncAgentSignaler, Mod, ModContext};
 use tokio::sync::watch;
 
@@ -25,10 +26,10 @@ struct InspectorTabState {
 ///
 /// Uses `ps -o args=` for command line args (sysinfo can't read cmd on macOS).
 /// Uses `sysinfo` for CPU/memory metrics (fast, no subprocess).
-/// Uses `lsof -iTCP` for listening port detection.
+/// Uses native OS socket inspection for listening port detection.
 ///
-/// Agent detection (claude/codex) is retained via `diff_agent_pids` so
-/// `ClaudeCodeMod` and `CodexMod` continue to work unchanged.
+/// Agent detection (claude/codex) is retained via
+/// `diff_agent_pids` so the per-agent MODs continue to work unchanged.
 ///
 /// Scan interval: every 2 seconds while the tab is open.
 pub struct ShellProcessMod {
@@ -37,7 +38,9 @@ pub struct ShellProcessMod {
 
 impl ShellProcessMod {
     pub fn new() -> Self {
-        Self { tabs: HashMap::new() }
+        Self {
+            tabs: HashMap::new(),
+        }
     }
 }
 
@@ -77,7 +80,8 @@ impl Mod for ShellProcessMod {
             }
         });
 
-        self.tabs.insert(ctx.tab_id.to_string(), InspectorTabState { cwd_tx, handle });
+        self.tabs
+            .insert(ctx.tab_id.to_string(), InspectorTabState { cwd_tx, handle });
     }
 
     fn on_cwd_changed(&mut self, cwd: &str, ctx: &ModContext) {
@@ -107,6 +111,7 @@ impl Mod for ShellProcessMod {
 ///   - `"codex"` ← name is `"codex"` OR name starts with `"node"` and the
 ///     command contains evidence of Codex (argv[0] basename or a path
 ///     segment matching `"codex"`).
+
 ///   - Otherwise returns the original name unchanged (shell processes etc.)
 fn resolve_agent_name(name: &str, command: &str) -> String {
     if name == "claude" {
@@ -115,6 +120,7 @@ fn resolve_agent_name(name: &str, command: &str) -> String {
     if name == "codex" {
         return "codex".to_string();
     }
+
     if name.starts_with("node") {
         // Node.js wrapper scripts (e.g. /usr/local/bin/codex) exec the JS
         // runtime directly, so argv[0] becomes the node binary path and the
@@ -136,7 +142,7 @@ fn resolve_agent_name(name: &str, command: &str) -> String {
         // We check EVERY path segment (not just the basename) so paths like
         // /usr/local/lib/node_modules/codex/dist/index.js are caught.
         for arg in command.split_whitespace().skip(1) {
-            for segment in arg.split(|c: char| c == '/' || c == '\\') {
+            for segment in arg.split(['/', '\\']) {
                 if segment == "codex" || segment.starts_with("codex.") {
                     return "codex".to_string();
                 }
@@ -160,7 +166,8 @@ fn diff_agent_pids(
         let raw_name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("");
         let resolved = resolve_agent_name(raw_name, cmd);
-        if resolved == "claude-code" || resolved == "codex" {
+        if resolved == "claude-code" || resolved == "codex"
+        {
             if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
                 current_agents.insert(resolved, (pid as u32, cmd.to_string()));
             }
@@ -171,7 +178,9 @@ fn diff_agent_pids(
     for (agent, (prev_pid, _prev_cmd)) in prev_agents.iter() {
         match current_agents.get(agent) {
             None => signaler.agent_cleared(agent),
-            Some((curr_pid, _)) if curr_pid != prev_pid => { signaler.agent_cleared(agent); }
+            Some((curr_pid, _)) if curr_pid != prev_pid => {
+                signaler.agent_cleared(agent);
+            }
             _ => {}
         }
     }
@@ -179,8 +188,12 @@ fn diff_agent_pids(
     for (agent, (curr_pid, cmd)) in &current_agents {
         match prev_agents.get(agent) {
             None => signaler.agent_detected(agent, cwd, cmd),
-            Some((prev_pid, _prev_cmd)) if prev_pid != curr_pid => { signaler.agent_detected(agent, cwd, cmd); }
-            Some((prev_pid, prev_cmd)) if prev_cmd != cmd => { signaler.agent_detected(agent, cwd, cmd); }
+            Some((prev_pid, _prev_cmd)) if prev_pid != curr_pid => {
+                signaler.agent_detected(agent, cwd, cmd);
+            }
+            Some((prev_pid, prev_cmd)) if prev_cmd != cmd => {
+                signaler.agent_detected(agent, cwd, cmd);
+            }
             _ => {}
         }
     }
@@ -251,19 +264,19 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
     // status bar reflects the full process tree footprint, not just the wrapper.
     let pids_clone = pids.clone();
     let attribution_clone = attribution.clone();
-    let raw = tokio::task::spawn_blocking(move || {
-        get_process_metrics(&pids_clone, &attribution_clone)
-    })
-    .await
-    .unwrap_or_default();
+    let raw =
+        tokio::task::spawn_blocking(move || get_process_metrics(&pids_clone, &attribution_clone))
+            .await
+            .unwrap_or_default();
 
     if raw.is_empty() {
         return Vec::new();
     }
 
-    // Step 5: listening ports via lsof TCP, using the pre-built attribution map.
+    // Step 5: listening ports via native OS socket inspection, using the
+    // pre-built attribution map.
     let metric_pids: Vec<u32> = raw.iter().map(|p| p.0).collect();
-    let ports_map = find_listening_ports_per_pid(&metric_pids, &attribution).await;
+    let ports_map = port_scanner::listening_ports_per_pid(&metric_pids, &attribution).await;
 
     raw.into_iter()
         .map(|(pid, name, cpu_percent, memory_kb, elapsed_time)| {
@@ -276,7 +289,8 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
             // doesn't include flags like --model. If a grandchild resolves to
             // the same agent, use its command so the status bar shows the real
             // invocation including any model flags.
-            if resolved_name == "claude-code" || resolved_name == "codex" {
+            if resolved_name == "claude-code" || resolved_name == "codex"
+            {
                 if let Some(gcs) = child_to_grandchildren.get(&pid) {
                     for gc_pid in gcs {
                         if let Some(gc_cmd) = args_map.get(gc_pid) {
@@ -325,7 +339,9 @@ async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     .ok()
     .and_then(|r| r.ok());
 
-    let Some(output) = output else { return Vec::new() };
+    let Some(output) = output else {
+        return Vec::new();
+    };
     let text = String::from_utf8_lossy(&output.stdout);
 
     let mut pids = Vec::new();
@@ -340,7 +356,9 @@ async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
             None => continue,
         };
         // comm consumed but not used — any process name qualifies
-        if parts.next().is_none() { continue; }
+        if parts.next().is_none() {
+            continue;
+        }
 
         if ppid == shell_pid {
             pids.push(pid);
@@ -369,7 +387,9 @@ async fn find_grandchildren(pids: &[u32]) -> Vec<(u32, u32)> {
     .ok()
     .and_then(|r| r.ok());
 
-    let Some(output) = output else { return Vec::new() };
+    let Some(output) = output else {
+        return Vec::new();
+    };
     let text = String::from_utf8_lossy(&output.stdout);
     let parent_set: std::collections::HashSet<u32> = pids.iter().cloned().collect();
 
@@ -397,7 +417,11 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     if pids.is_empty() {
         return HashMap::new();
     }
-    let pid_list = pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+    let pid_list = pids
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
         tokio::process::Command::new("ps")
@@ -408,13 +432,17 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     .ok()
     .and_then(|r| r.ok());
 
-    let Some(output) = output else { return HashMap::new() };
+    let Some(output) = output else {
+        return HashMap::new();
+    };
     let text = String::from_utf8_lossy(&output.stdout);
 
     let mut result = HashMap::new();
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if let Some(space) = line.find(char::is_whitespace) {
             if let Ok(pid) = line[..space].trim().parse::<u32>() {
                 let cmd = line[space..].trim().to_string();
@@ -463,7 +491,15 @@ fn get_process_metrics(
             let p = sys.process(Pid::from(pid as usize))?;
             let name = p.name().to_string_lossy().to_lowercase();
             let name = name.trim_end_matches('\0').to_string();
-            Some((pid, (name, p.cpu_usage(), p.memory() / 1024, now_secs.saturating_sub(p.start_time()))))
+            Some((
+                pid,
+                (
+                    name,
+                    p.cpu_usage(),
+                    p.memory() / 1024,
+                    now_secs.saturating_sub(p.start_time()),
+                ),
+            ))
         })
         .collect();
 
@@ -492,7 +528,13 @@ fn get_process_metrics(
             }
 
             let elapsed_time = format_elapsed(*elapsed_secs);
-            Some((root_pid, name.clone(), total_cpu, total_memory_kb, elapsed_time))
+            Some((
+                root_pid,
+                name.clone(),
+                total_cpu,
+                total_memory_kb,
+                elapsed_time,
+            ))
         })
         .collect()
 }
@@ -503,65 +545,11 @@ fn format_elapsed(secs: u64) -> String {
     } else if secs < 86400 {
         format!("{}:{:02}:{:02}", secs / 3600, (secs % 3600) / 60, secs % 60)
     } else {
-        format!("{}-{:02}:{:02}", secs / 86400, (secs % 86400) / 3600, (secs % 3600) / 60)
+        format!(
+            "{}-{:02}:{:02}",
+            secs / 86400,
+            (secs % 86400) / 3600,
+            (secs % 3600) / 60
+        )
     }
-}
-
-/// Scan listening TCP ports for `direct_pids` using the pre-built `attribution`
-/// map (pid → root direct-child pid) to include grandchildren without an extra
-/// ps call.
-///
-/// Grandchild ports are attributed to the direct-child PID so the status bar
-/// entry stays stable and correct.
-async fn find_listening_ports_per_pid(
-    direct_pids: &[u32],
-    attribution: &HashMap<u32, u32>,
-) -> HashMap<u32, Vec<u16>> {
-    if direct_pids.is_empty() {
-        return HashMap::new();
-    }
-
-    let all_pids: Vec<u32> = attribution.keys().cloned().collect();
-    let pid_arg = all_pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
-
-    let output = tokio::time::timeout(
-        tokio::time::Duration::from_secs(3),
-        tokio::process::Command::new("lsof")
-            .args(["-nP", "-a", "-p", &pid_arg, "-iTCP", "-sTCP:LISTEN", "-Fpn"])
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(|r| r.ok());
-
-    let Some(output) = output else { return HashMap::new() };
-    let text = String::from_utf8_lossy(&output.stdout);
-
-    let mut result: HashMap<u32, Vec<u16>> = HashMap::new();
-    let mut current_attributed_pid: Option<u32> = None;
-
-    for line in text.lines() {
-        if let Some(pid_str) = line.strip_prefix('p') {
-            // Resolve lsof's raw PID to the direct-child PID shown in the UI.
-            current_attributed_pid = pid_str
-                .parse::<u32>()
-                .ok()
-                .and_then(|raw| attribution.get(&raw).copied());
-        } else if let Some(addr) = line.strip_prefix('n') {
-            if let Some(pid) = current_attributed_pid {
-                if let Some(port_str) = addr.rsplit(':').next() {
-                    if let Ok(port) = port_str.parse::<u16>() {
-                        result.entry(pid).or_default().push(port);
-                    }
-                }
-            }
-        }
-    }
-
-    for ports in result.values_mut() {
-        ports.sort_unstable();
-        ports.dedup();
-    }
-
-    result
 }

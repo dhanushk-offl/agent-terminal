@@ -54,12 +54,22 @@ pub static AGENT_HOOK_CONFIGS: &[AgentHookConfig] = &[
         config_tilde_path: "~/.claude/settings.json",
         timeout_ms: 10_000,
         events: &[
-            AgentHookEvent { event_name: "SessionStart" },
-            AgentHookEvent { event_name: "UserPromptSubmit" },
-            AgentHookEvent { event_name: "PreToolUse" },
-            AgentHookEvent { event_name: "Notification" },
+            AgentHookEvent {
+                event_name: "SessionStart",
+            },
+            AgentHookEvent {
+                event_name: "UserPromptSubmit",
+            },
+            AgentHookEvent {
+                event_name: "PreToolUse",
+            },
+            AgentHookEvent {
+                event_name: "Notification",
+            },
             AgentHookEvent { event_name: "Stop" },
-            AgentHookEvent { event_name: "SessionEnd" },
+            AgentHookEvent {
+                event_name: "SessionEnd",
+            },
         ],
     },
     AgentHookConfig {
@@ -69,17 +79,35 @@ pub static AGENT_HOOK_CONFIGS: &[AgentHookConfig] = &[
         config_tilde_path: "~/.codex/hooks.json",
         timeout_ms: 5_000,
         events: &[
-            AgentHookEvent { event_name: "SessionStart" },
-            AgentHookEvent { event_name: "UserPromptSubmit" },
+            AgentHookEvent {
+                event_name: "SessionStart",
+            },
+            AgentHookEvent {
+                event_name: "UserPromptSubmit",
+            },
             // Codex's equivalent of Claude's `Notification` — fires when the
             // agent is blocked waiting for user approval (e.g. a shell command
             // that needs confirmation). Routed to the same `awaiting` state in
             // AgentTurnMod so the UI shows the amber badge identically.
-            AgentHookEvent { event_name: "PermissionRequest" },
+            AgentHookEvent {
+                event_name: "PermissionRequest",
+            },
             AgentHookEvent { event_name: "Stop" },
         ],
     },
 ];
+
+/// Human-readable display name for every supported agent.
+///
+/// This registry provides display names for all agents (Claude Code, Codex)
+/// used across the app for UI badges, notifications, and status labels.
+pub fn display_name_for_agent_id(agent_id: &str) -> Option<&'static str> {
+    match agent_id {
+        "claude-code" => Some("Claude Code"),
+        "codex" => Some("Codex CLI"),
+        _ => None,
+    }
+}
 
 // ─── Registry lookup ──────────────────────────────────────────────────────────
 
@@ -103,9 +131,7 @@ pub async fn ensure_hooks_installed() {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => {
-            eprintln!(
-                "[hook_config] could not determine home directory — skipping hook install"
-            );
+            eprintln!("[hook_config] could not determine home directory — skipping hook install");
             return;
         }
     };
@@ -282,11 +308,7 @@ pub(crate) async fn merge_hook_config_at(
         .map_err(|e| format!("invalid JSON in {}: {e}", config_path.display()))?;
 
     if !root.is_object() {
-        return Err(format!(
-            "{} root is not a JSON object",
-            config_path.display()
-        )
-        .into());
+        return Err(format!("{} root is not a JSON object", config_path.display()).into());
     }
 
     let script_path_str = script_path.to_string_lossy().to_string();
@@ -346,10 +368,7 @@ pub(crate) async fn merge_hook_config_at(
     // (re-add path), but means hooks in the missing-entry window are
     // dropped. Proper fix: advisory file lock around the load → merge →
     // write_atomic block (fs4 crate's `FileExt::lock_exclusive`).
-    let tmp_path = config_path.with_extension(format!(
-        "agent-terminal-{}.tmp",
-        std::process::id()
-    ));
+    let tmp_path = config_path.with_extension(format!("agent-terminal-{}.tmp", std::process::id()));
     tokio::fs::write(&tmp_path, format!("{serialized}\n")).await?;
     tokio::fs::rename(&tmp_path, config_path).await?;
 
@@ -383,9 +402,9 @@ fn command_in_nested_entry(arr: &[Value], our_command: &str) -> bool {
             .get("hooks")
             .and_then(|h| h.as_array())
             .map(|inner| {
-                inner.iter().any(|h| {
-                    h.get("command").and_then(|v| v.as_str()) == Some(our_command)
-                })
+                inner
+                    .iter()
+                    .any(|h| h.get("command").and_then(|v| v.as_str()) == Some(our_command))
             })
             .unwrap_or(false)
     })
@@ -441,8 +460,7 @@ mod tests {
                         .and_then(|h| h.as_array())
                         .map(|inner| {
                             inner.iter().any(|h| {
-                                h.get("command").and_then(|v| v.as_str())
-                                    == Some(expected.as_str())
+                                h.get("command").and_then(|v| v.as_str()) == Some(expected.as_str())
                             })
                         })
                         .unwrap_or(false);
@@ -472,7 +490,8 @@ mod tests {
         for event in claude_config().events {
             assert!(
                 has_our_command(&v, event.event_name, &script),
-                "missing command for {}", event.event_name
+                "missing command for {}",
+                event.event_name
             );
         }
         // File must contain exactly the hooks we wrote — no phantom keys.
@@ -549,7 +568,9 @@ mod tests {
         let v = read_json(&config_path);
         let arr = v["hooks"]["UserPromptSubmit"].as_array().unwrap();
         // Original entry preserved.
-        assert!(arr.iter().any(|e| e["command"].as_str() == Some("other-tool prompt")));
+        assert!(arr
+            .iter()
+            .any(|e| e["command"].as_str() == Some("other-tool prompt")));
         // Our entry appended.
         assert!(has_our_command(&v, "UserPromptSubmit", &script));
         assert!(arr.len() >= 2, "should have at least 2 entries");
@@ -702,13 +723,19 @@ mod tests {
                 .filter(|e| {
                     e.get("hooks")
                         .and_then(|h| h.as_array())
-                        .map(|inner| inner.iter().any(|h| {
-                            h.get("command").and_then(|v| v.as_str()) == Some(our_cmd.as_str())
-                        }))
+                        .map(|inner| {
+                            inner.iter().any(|h| {
+                                h.get("command").and_then(|v| v.as_str()) == Some(our_cmd.as_str())
+                            })
+                        })
                         .unwrap_or(false)
                 })
                 .count();
-            assert_eq!(count, 1, "event {} should have exactly one entry", event.event_name);
+            assert_eq!(
+                count, 1,
+                "event {} should have exactly one entry",
+                event.event_name
+            );
         }
     }
 
@@ -731,7 +758,8 @@ mod tests {
             // engine is literally Claude's — see codex-rs/hooks/.
             assert!(
                 has_our_command(&v, event.event_name, &script),
-                "missing {} in nested matcher+hooks format", event.event_name
+                "missing {} in nested matcher+hooks format",
+                event.event_name
             );
         }
     }
@@ -769,7 +797,10 @@ mod tests {
                 })
                 .unwrap_or(false)
         });
-        assert!(existing_present, "existing nested hook entry should be preserved");
+        assert!(
+            existing_present,
+            "existing nested hook entry should be preserved"
+        );
         // Ours also present.
         assert!(has_our_command(&v, "SessionStart", &script));
     }
@@ -831,7 +862,11 @@ mod tests {
                         .unwrap_or(0)
                 })
                 .sum();
-            assert_eq!(count, 1, "event {} should have exactly one entry", event.event_name);
+            assert_eq!(
+                count, 1,
+                "event {} should have exactly one entry",
+                event.event_name
+            );
         }
     }
 
@@ -842,7 +877,9 @@ mod tests {
         let script = dir.join("claude-hook");
 
         assert!(!script.exists());
-        write_hook_script_to(claude_config(), &script).await.unwrap();
+        write_hook_script_to(claude_config(), &script)
+            .await
+            .unwrap();
 
         assert!(script.exists(), "script should be created");
 
@@ -861,16 +898,23 @@ mod tests {
         let dir = temp_dir("s2");
         let script = dir.join("claude-hook");
 
-        write_hook_script_to(claude_config(), &script).await.unwrap();
+        write_hook_script_to(claude_config(), &script)
+            .await
+            .unwrap();
         let mtime_before = fs::metadata(&script).unwrap().modified().unwrap();
 
         // Brief pause to make mtime detectable.
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-        write_hook_script_to(claude_config(), &script).await.unwrap();
+        write_hook_script_to(claude_config(), &script)
+            .await
+            .unwrap();
         let mtime_after = fs::metadata(&script).unwrap().modified().unwrap();
 
-        assert_eq!(mtime_before, mtime_after, "script should not be rewritten if already current");
+        assert_eq!(
+            mtime_before, mtime_after,
+            "script should not be rewritten if already current"
+        );
     }
 
     // ── S3: script exists with outdated content → overwritten ─────────────────
@@ -882,14 +926,22 @@ mod tests {
         // Write stale content.
         fs::write(&script, "#!/bin/sh\necho old").unwrap();
 
-        write_hook_script_to(claude_config(), &script).await.unwrap();
+        write_hook_script_to(claude_config(), &script)
+            .await
+            .unwrap();
 
         let content = fs::read_to_string(&script).unwrap();
         // 127.0.0.1 (not `localhost`) so the script's address family matches
         // the server's bind. See doc comment on `build_hook_script`.
         let expected = format!("127.0.0.1:{}", crate::identity::HOOK_PORT);
-        assert!(content.contains(&expected), "script should contain {expected}");
-        assert!(!content.contains("echo old"), "old content should be replaced");
+        assert!(
+            content.contains(&expected),
+            "script should contain {expected}"
+        );
+        assert!(
+            !content.contains("echo old"),
+            "old content should be replaced"
+        );
     }
 
     // ── S4: script forwards AGENT_TERMINAL_TAB_ID into payload ───────────────
@@ -903,7 +955,9 @@ mod tests {
         let dir = temp_dir("s4");
         let script = dir.join("claude-hook");
 
-        write_hook_script_to(claude_config(), &script).await.unwrap();
+        write_hook_script_to(claude_config(), &script)
+            .await
+            .unwrap();
         let content = fs::read_to_string(&script).unwrap();
 
         // The env var name must appear in the script — without it, no

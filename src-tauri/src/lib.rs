@@ -14,25 +14,20 @@ mod shell_integration;
 use hook_config::ensure_hooks_installed;
 use hook_server::start_hook_server;
 use mod_engine::{
-    ModEngine,
     mods::{
-        AgentTurnMod,
-        ClaudeCodeMod,
-        CodexMod,
-        DirTrackerMod,
-        GitMonitorMod,
-        ProcessTrackerMod,
-        ShellProcessMod,
+        AgentTurnMod, ClaudeCodeMod, CodexMod, DirTrackerMod, GitMonitorMod,
+        ProcessTrackerMod, ShellProcessMod,
     },
+    ModEngine,
 };
 use notifications::NotificationService;
-use shell_integration::setup_shell_integration;
-use tauri::Manager;
-#[cfg(target_os = "macos")]
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
 use pty_manager::PtyMap;
+use shell_integration::setup_shell_integration;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
+use tauri::menu::{MenuBuilder, SubmenuBuilder};
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -149,9 +144,7 @@ pub fn run() {
 /// Builds and installs a custom macOS menu that intentionally omits the
 /// default items whose shortcuts collide with our app-level hotkeys.
 #[cfg(target_os = "macos")]
-fn install_app_menu(
-    app: &tauri::App,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn install_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_submenu = SubmenuBuilder::new(app, "Agent Terminal")
         .about(None)
         .separator()

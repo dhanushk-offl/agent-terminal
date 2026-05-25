@@ -59,7 +59,13 @@ impl<'a> ModContext<'a> {
         _current_cwd: Option<String>,
         shell_pid: u32,
     ) -> Self {
-        Self { tab_id, event_tx, cwd_tx, agent_tx, shell_pid }
+        Self {
+            tab_id,
+            event_tx,
+            cwd_tx,
+            agent_tx,
+            shell_pid,
+        }
     }
 
     /// Emit a typed event to the frontend. Non-blocking — silently drops if the
@@ -102,7 +108,6 @@ impl<'a> ModContext<'a> {
         }
     }
 }
-
 
 /// A `Clone + Send` emitter for use inside `tokio::spawn` tasks.
 #[derive(Clone)]
@@ -161,4 +166,3 @@ impl AsyncAgentSignaler {
         });
     }
 }
-

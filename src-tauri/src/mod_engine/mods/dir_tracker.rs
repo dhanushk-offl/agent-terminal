@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{Mod, ModContext};
 use crate::mod_engine::osc_parser::OscParser;
+use crate::mod_engine::{Mod, ModContext};
 
 /// Watches OSC 7 sequences in PTY output and signals the engine of CWD changes.
 ///
@@ -17,7 +17,9 @@ pub struct DirTrackerMod {
 
 impl DirTrackerMod {
     pub fn new() -> Self {
-        Self { parsers: HashMap::new() }
+        Self {
+            parsers: HashMap::new(),
+        }
     }
 }
 
@@ -27,7 +29,8 @@ impl Mod for DirTrackerMod {
     }
 
     fn on_open(&mut self, ctx: &ModContext) {
-        self.parsers.insert(ctx.tab_id.to_string(), OscParser::new());
+        self.parsers
+            .insert(ctx.tab_id.to_string(), OscParser::new());
     }
 
     fn on_output(&mut self, data: &[u8], ctx: &ModContext) {
@@ -48,11 +51,7 @@ impl Mod for DirTrackerMod {
             // this on_output round completes.
             ctx.set_cwd(&path);
 
-            ctx.emit(
-                self.id(),
-                "cwd_changed",
-                serde_json::json!({ "cwd": path }),
-            );
+            ctx.emit(self.id(), "cwd_changed", serde_json::json!({ "cwd": path }));
         }
     }
 
@@ -93,10 +92,7 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (
-                hex_val(bytes[i + 1]),
-                hex_val(bytes[i + 2]),
-            ) {
+            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
                 out.push((hi << 4) | lo);
                 i += 3;
                 continue;

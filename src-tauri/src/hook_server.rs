@@ -12,8 +12,9 @@
 //! fighting for the port. Neither port is assigned to any common service in
 //! the IANA registry.
 
-use axum::{Router, extract::State, http::StatusCode, routing::post, Json};
+use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::mpsc;
 
 /// Payload delivered by agent hook scripts to `POST /hook`.
@@ -35,11 +36,17 @@ pub struct HookPayload {
     /// `AgentTurnMod` drops the event at its top-of-handler gate. See
     /// `hook_config::build_hook_script` for the script-side half.
     pub tab_id: Option<String>,
+    #[serde(alias = "conversationId", alias = "sessionId")]
     pub session_id: Option<String>,
     pub cwd: Option<String>,
+    #[serde(alias = "toolCall")]
+    pub tool_call: Option<Value>,
+    #[serde(alias = "toolName")]
     pub tool_name: Option<String>,
     pub message: Option<String>,
+    #[serde(alias = "transcriptPath")]
     pub transcript_path: Option<String>,
+    #[serde(alias = "lastAssistantMessage")]
     pub last_assistant_message: Option<String>,
     /// Sent by Codex `PermissionRequest` events — the human-readable
     /// description of what the agent wants to do (typically a shell command).
@@ -50,6 +57,8 @@ pub struct HookPayload {
     /// pipeline can forward it if and when agents start providing it.
     /// `None` when the hook payload does not include a model field.
     pub model: Option<String>,
+    #[serde(alias = "fullyIdle")]
+    pub fully_idle: Option<bool>,
 }
 
 /// Starts the hook HTTP server in a background task.

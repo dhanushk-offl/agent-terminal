@@ -6,8 +6,8 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize, Clone)]
 pub struct PtyDataPayload {
@@ -112,10 +112,7 @@ struct ReaderCtx {
 /// off to `respawn_in_place` (shell self-exit). If respawn fails or the rate
 /// limit fires, it falls back to pty:exit. See module-level discussion of
 /// closing vs self-exit.
-fn spawn_reader_thread(
-    ctx: ReaderCtx,
-    mut reader: Box<dyn Read + Send>,
-) {
+fn spawn_reader_thread(ctx: ReaderCtx, mut reader: Box<dyn Read + Send>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; READ_BUF_SIZE];
 
@@ -137,7 +134,10 @@ fn spawn_reader_thread(
                     let _ = decoder.decode_to_string(&[], &mut decoded, true);
                     if !decoded.is_empty() {
                         if let Some(ch) = ctx.channel.lock().unwrap().as_ref() {
-                            ch.send(PtyDataPayload { data: decoded.clone() }).ok();
+                            ch.send(PtyDataPayload {
+                                data: decoded.clone(),
+                            })
+                            .ok();
                         }
                     }
 
@@ -151,10 +151,14 @@ fn spawn_reader_thread(
                         // path: drop the live channel, tell the frontend
                         // and mods, then exit the thread.
                         ctx.channel.lock().unwrap().take();
-                        ctx.app.emit(
-                            "pty:exit",
-                            PtyExitPayload { tab_id: ctx.tab_id.clone() },
-                        ).ok();
+                        ctx.app
+                            .emit(
+                                "pty:exit",
+                                PtyExitPayload {
+                                    tab_id: ctx.tab_id.clone(),
+                                },
+                            )
+                            .ok();
                         ctx.mod_handle.on_tab_close(&ctx.tab_id);
                         break;
                     }
@@ -169,18 +173,20 @@ fn spawn_reader_thread(
                     //   * Err              → fall through to the user-close path
                     //     (rate limit hit, OS error, etc.)
                     match respawn_in_place(&ctx) {
-                        Ok(RespawnOutcome::Respawned)
-                        | Ok(RespawnOutcome::SkippedExternally) => break,
+                        Ok(RespawnOutcome::Respawned) | Ok(RespawnOutcome::SkippedExternally) => {
+                            break
+                        }
                         Err(e) => {
-                            eprintln!(
-                                "[pty_manager] respawn failed for {}: {e}",
-                                ctx.tab_id
-                            );
+                            eprintln!("[pty_manager] respawn failed for {}: {e}", ctx.tab_id);
                             ctx.channel.lock().unwrap().take();
-                            ctx.app.emit(
-                                "pty:exit",
-                                PtyExitPayload { tab_id: ctx.tab_id.clone() },
-                            ).ok();
+                            ctx.app
+                                .emit(
+                                    "pty:exit",
+                                    PtyExitPayload {
+                                        tab_id: ctx.tab_id.clone(),
+                                    },
+                                )
+                                .ok();
                             ctx.mod_handle.on_tab_close(&ctx.tab_id);
                             break;
                         }
@@ -194,9 +200,11 @@ fn spawn_reader_thread(
                     let send_ok = {
                         let guard = ctx.channel.lock().unwrap();
                         match guard.as_ref() {
-                            Some(ch) => {
-                                ch.send(PtyDataPayload { data: decoded.clone() }).is_ok()
-                            }
+                            Some(ch) => ch
+                                .send(PtyDataPayload {
+                                    data: decoded.clone(),
+                                })
+                                .is_ok(),
                             // No channel — WebView disconnected. Skip the
                             // forward but still feed mods so per-tab state
                             // stays current for reconnect.
@@ -273,15 +281,15 @@ fn respawn_in_place(ctx: &ReaderCtx) -> Result<RespawnOutcome, String> {
     // 80x24 default and stays there until the user manually resizes the
     // pane (xterm doesn't fire a resize when its container size hasn't
     // changed).
-    let size = handle
-        .master
-        .get_size()
-        .unwrap_or(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 });
+    let size = handle.master.get_size().unwrap_or(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    });
 
     let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(size)
-        .map_err(|e| e.to_string())?;
+    let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
     let cmd = build_shell_command(&handle.shell_path, cwd.as_deref(), &ctx.tab_id);
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -321,13 +329,15 @@ fn respawn_in_place(ctx: &ReaderCtx) -> Result<RespawnOutcome, String> {
         new_reader,
     );
 
-    ctx.app.emit(
-        "pty:respawned",
-        PtyRespawnPayload {
-            tab_id: ctx.tab_id.clone(),
-            cwd,
-        },
-    ).ok();
+    ctx.app
+        .emit(
+            "pty:respawned",
+            PtyRespawnPayload {
+                tab_id: ctx.tab_id.clone(),
+                cwd,
+            },
+        )
+        .ok();
 
     Ok(RespawnOutcome::Respawned)
 }
@@ -379,7 +389,10 @@ pub fn try_reattach(
     // exit-or-respawn path.
     let new_alive = Arc::new(AtomicBool::new(true));
     handle.reader_alive = new_alive.clone();
-    let reader = handle.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let reader = handle
+        .master
+        .try_clone_reader()
+        .map_err(|e| e.to_string())?;
     let channel = handle.channel.clone();
     let closing = handle.closing.clone();
     drop(map);
@@ -405,11 +418,7 @@ pub fn try_reattach(
 /// same shell-integration shims, login-shell flags, and AGENT_TERMINAL_TAB_ID
 /// injection — without that, the new shell wouldn't emit OSC 7, breaking
 /// the next respawn's CWD lookup.
-fn build_shell_command(
-    shell_path: &str,
-    cwd: Option<&str>,
-    tab_id: &str,
-) -> CommandBuilder {
+fn build_shell_command(shell_path: &str, cwd: Option<&str>, tab_id: &str) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell_path);
     cmd.env("AGENT_TERMINAL_TAB_ID", tab_id);
 
@@ -438,7 +447,11 @@ fn build_shell_command(
 
     if shell_name == "zsh" {
         let at_zsh_dir = dirs::home_dir()
-            .map(|h| h.join(".config").join(crate::identity::NAMESPACE).join("zsh"))
+            .map(|h| {
+                h.join(".config")
+                    .join(crate::identity::NAMESPACE)
+                    .join("zsh")
+            })
             .and_then(|p| p.to_str().map(|s| s.to_string()));
 
         if let Some(zdotdir) = at_zsh_dir {
@@ -454,7 +467,11 @@ fn build_shell_command(
         cmd.arg("-l");
     } else if shell_name == "bash" {
         let init_file = dirs::home_dir()
-            .map(|h| h.join(".config").join(crate::identity::NAMESPACE).join("bash-integration.bash"))
+            .map(|h| {
+                h.join(".config")
+                    .join(crate::identity::NAMESPACE)
+                    .join("bash-integration.bash")
+            })
             .and_then(|p| p.to_str().map(|s| s.to_string()));
 
         if let Some(init) = init_file {
@@ -478,12 +495,16 @@ pub fn spawn_pty(
 ) -> Result<(), String> {
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| e.to_string())?;
 
-    let shell_path = shell.unwrap_or_else(|| {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
-    });
+    let shell_path =
+        shell.unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string()));
 
     let cmd = build_shell_command(&shell_path, cwd.as_deref(), &tab_id);
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

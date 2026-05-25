@@ -107,7 +107,10 @@ impl OscParser {
             Some(OscSequence { code, arg })
         } else {
             let code: u32 = s.trim().parse().ok()?;
-            Some(OscSequence { code, arg: String::new() })
+            Some(OscSequence {
+                code,
+                arg: String::new(),
+            })
         }
     }
 }

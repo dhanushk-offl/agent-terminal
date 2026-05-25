@@ -50,6 +50,10 @@ impl Mod for CodexMod {
         if agent != "codex" {
             return;
         }
-        ctx.emit("codex", "tab_type_changed", serde_json::json!({ "type": "shell" }));
+        ctx.emit(
+            "codex",
+            "tab_type_changed",
+            serde_json::json!({ "type": "shell" }),
+        );
     }
 }

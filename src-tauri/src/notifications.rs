@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 
-use crate::hook_config::config_for_agent_id;
+use crate::hook_config::display_name_for_agent_id;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -222,13 +222,9 @@ impl NotificationService {
             // (project_id, tab_id_within_project). The split must succeed;
             // malformed composites get dropped rather than misrouted.
             let (project_id, tab_id_in_project) = match composite_tab_id.split_once(':') {
-                Some((p, t)) if !p.is_empty() && !t.is_empty() => {
-                    (p.to_string(), t.to_string())
-                }
+                Some((p, t)) if !p.is_empty() && !t.is_empty() => (p.to_string(), t.to_string()),
                 _ => {
-                    eprintln!(
-                        "[notifications] malformed composite tab id: {composite_tab_id}"
-                    );
+                    eprintln!("[notifications] malformed composite tab id: {composite_tab_id}");
                     return;
                 }
             };
@@ -240,8 +236,8 @@ impl NotificationService {
                 .unwrap_or_else(|| project_id.clone());
 
             // Resolve display name from registry — agent-agnostic lookup.
-            let display_name = config_for_agent_id(&agent_id)
-                .map(|c| c.agent_name.to_string())
+            let display_name = display_name_for_agent_id(&agent_id)
+                .map(|name| name.to_string())
                 .unwrap_or_else(|| agent_id.clone());
 
             let title = format!("{display_name} · {project_name}");
@@ -441,7 +437,11 @@ mod backend {
         let granted = matches!(plugin.permission_state(), Ok(PermissionState::Granted))
             || matches!(plugin.request_permission(), Ok(PermissionState::Granted));
         eprintln!("[notifications] (dev) permission granted = {granted}");
-        if granted { super::PermissionOutcome::Granted } else { super::PermissionOutcome::Denied }
+        if granted {
+            super::PermissionOutcome::Granted
+        } else {
+            super::PermissionOutcome::Denied
+        }
     }
 }
 
@@ -473,7 +473,7 @@ mod backend {
     use std::sync::Arc;
     use tauri::{Emitter, Manager};
     use tokio::sync::oneshot;
-    use user_notify::{NotificationBuilder, get_notification_manager};
+    use user_notify::{get_notification_manager, NotificationBuilder};
 
     /// Initialize the user-notify manager and register the click callback.
     /// MUST run on macOS main thread (UNUserNotificationCenterDelegate setup).
@@ -495,10 +495,7 @@ mod backend {
                     let project_id = info.get("project_id").cloned().unwrap_or_default();
                     let tab_id = info.get("tab_id").cloned().unwrap_or_default();
                     if project_id.is_empty() || tab_id.is_empty() {
-                        eprintln!(
-                            "[notifications] click with no routing data: {:?}",
-                            response,
-                        );
+                        eprintln!("[notifications] click with no routing data: {:?}", response,);
                         return;
                     }
                     // Bring the window forward as well — single-instance plugin
@@ -574,7 +571,9 @@ mod backend {
     }
 
     pub fn cancel(svc: &NotificationService, composite_tab_id: &str) {
-        let Some(manager) = svc.manager.lock().unwrap().clone() else { return };
+        let Some(manager) = svc.manager.lock().unwrap().clone() else {
+            return;
+        };
         let id = format!("agent-terminal:tab:{composite_tab_id}");
         // remove_delivered_notifications is sync — dispatch to main thread.
         let id_owned = id;
@@ -630,8 +629,8 @@ mod backend {
     //! dependent — some DEs may swallow actions).
 
     use super::{FirePayload, NotificationService};
-    use std::sync::Arc;
     use notify_rust::{Notification, Timeout};
+    use std::sync::Arc;
 
     pub fn init(_svc: &Arc<NotificationService>) {
         eprintln!("[notifications] linux release backend (notify-rust) initialized");

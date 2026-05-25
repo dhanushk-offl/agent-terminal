@@ -22,7 +22,7 @@
 //! cargo test --manifest-path src-tauri/Cargo.toml --test hook_integration -- --include-ignored --test-threads=1
 //! ```
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::VecDeque;
@@ -32,7 +32,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -207,7 +207,10 @@ async fn i1_claude_hook_fires_session_start() {
     }
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i1: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i1: port {} busy (agent-terminal running?)",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -223,7 +226,10 @@ async fn i1_claude_hook_fires_session_start() {
     assert_eq!(got["event"], "SessionStart", "event field injected");
     assert_eq!(got["session_id"], "test-session-i1", "session_id preserved");
     assert_eq!(got["cwd"], "/tmp/i1-project", "cwd preserved");
-    assert_eq!(got["transcript_path"], "/tmp/i1.jsonl", "transcript_path preserved");
+    assert_eq!(
+        got["transcript_path"], "/tmp/i1.jsonl",
+        "transcript_path preserved"
+    );
 }
 
 // ─── I2: Claude hook fires for PreToolUse (includes tool_name) ───────────────
@@ -238,7 +244,10 @@ async fn i2_claude_hook_fires_pre_tool_use() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i2: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i2: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -267,7 +276,10 @@ async fn i3_codex_hook_fires_session_start() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i3: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i3: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -281,7 +293,10 @@ async fn i3_codex_hook_fires_session_start() {
 
     assert_eq!(got["agent"], "codex", "agent field injected");
     assert_eq!(got["event"], "SessionStart", "event field injected");
-    assert_eq!(got["session_id"], "codex-session-i3", "session_id preserved");
+    assert_eq!(
+        got["session_id"], "codex-session-i3",
+        "session_id preserved"
+    );
     assert_eq!(got["cwd"], "/tmp/i3-project", "cwd preserved");
 }
 
@@ -297,7 +312,10 @@ async fn i4_codex_hook_fires_stop() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i4: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i4: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -333,7 +351,10 @@ async fn i7_hook_script_does_not_hang_when_server_absent() {
     // Confirm port really is free. If an external process holds it, skip
     // rather than report a misleading failure.
     if try_bind_hook_port().await.is_none() {
-        eprintln!("SKIP i7: port {} busy — cannot test absent-server case", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i7: port {} busy — cannot test absent-server case",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     }
     // (Listener dropped immediately above so the script sees a free port.)
@@ -364,7 +385,10 @@ async fn i8_hook_script_does_not_hang_when_server_unresponsive() {
     }
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i8: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i8: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
 
@@ -512,7 +536,10 @@ async fn i9_claude_hook_forwards_tab_id_when_env_set() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i9: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i9: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -526,11 +553,9 @@ async fn i9_claude_hook_forwards_tab_id_when_env_set() {
         &[],
     );
 
-    let got = wait_for_payload_matching(&server.received, |p| {
-        p["session_id"] == "test-session-i9"
-    })
-    .await
-    .expect("no payload received within 3s");
+    let got = wait_for_payload_matching(&server.received, |p| p["session_id"] == "test-session-i9")
+        .await
+        .expect("no payload received within 3s");
 
     assert_eq!(got["agent"], "claude-code");
     assert_eq!(got["event"], "SessionStart");
@@ -554,7 +579,10 @@ async fn i10_claude_hook_omits_tab_id_when_env_unset() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i10: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i10: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -572,11 +600,10 @@ async fn i10_claude_hook_omits_tab_id_when_env_unset() {
         &["AGENT_TERMINAL_TAB_ID"],
     );
 
-    let got = wait_for_payload_matching(&server.received, |p| {
-        p["session_id"] == "test-session-i10"
-    })
-    .await
-    .expect("no payload received within 3s");
+    let got =
+        wait_for_payload_matching(&server.received, |p| p["session_id"] == "test-session-i10")
+            .await
+            .expect("no payload received within 3s");
 
     assert_eq!(got["agent"], "claude-code");
     assert_eq!(got["event"], "SessionStart");
@@ -599,7 +626,10 @@ async fn i11_claude_hook_omits_tab_id_when_value_unsafe() {
         return;
     }
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP i11: port {} busy", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP i11: port {} busy",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -615,11 +645,10 @@ async fn i11_claude_hook_omits_tab_id_when_value_unsafe() {
         &[],
     );
 
-    let got = wait_for_payload_matching(&server.received, |p| {
-        p["session_id"] == "test-session-i11"
-    })
-    .await
-    .expect("no payload received within 3s");
+    let got =
+        wait_for_payload_matching(&server.received, |p| p["session_id"] == "test-session-i11")
+            .await
+            .expect("no payload received within 3s");
 
     assert!(
         got.get("tab_id").is_none(),
@@ -728,12 +757,7 @@ async fn wait_for_session_in_cwd(
 /// because that's what end users actually use. Hook firing should be verified
 /// against the realistic path. The user opens a session, types a prompt, hits
 /// enter, and the test sees the events.
-fn print_e2e_instructions(
-    test_name: &str,
-    cwd: &str,
-    launch_command: &str,
-    prompt_to_send: &str,
-) {
+fn print_e2e_instructions(test_name: &str, cwd: &str, launch_command: &str, prompt_to_send: &str) {
     eprintln!();
     eprintln!("==============================================================");
     eprintln!("  GUIDED E2E TEST — HUMAN ACTION REQUIRED");
@@ -753,7 +777,10 @@ fn print_e2e_instructions(
     eprintln!("           hook events as they fire and move on automatically.");
     eprintln!("           You can close the session anytime after that.");
     eprintln!();
-    eprintln!("  Test will wait up to {} seconds for hook events.", E2E_GUIDED_TIMEOUT.as_secs());
+    eprintln!(
+        "  Test will wait up to {} seconds for hook events.",
+        E2E_GUIDED_TIMEOUT.as_secs()
+    );
     eprintln!("==============================================================");
     eprintln!();
 }
@@ -784,7 +811,10 @@ async fn e1_guided_claude_fires_hooks_end_to_end() {
     agent_terminal_lib::hook_config::ensure_hooks_installed().await;
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP e1: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP e1: port {} busy (agent-terminal running?)",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
@@ -794,7 +824,8 @@ async fn e1_guided_claude_fires_hooks_end_to_end() {
     // Canonicalize: macOS resolves /var/folders → /private/var/folders, and
     // claude reports the canonical path in hook payloads. Without canonicalize,
     // our cwd filter rejects every event from the user's manual session.
-    let test_cwd_raw = std::env::temp_dir().join(format!("agent-terminal-e1-{}", std::process::id()));
+    let test_cwd_raw =
+        std::env::temp_dir().join(format!("agent-terminal-e1-{}", std::process::id()));
     std::fs::create_dir_all(&test_cwd_raw).expect("could not create test cwd");
     let test_cwd = std::fs::canonicalize(&test_cwd_raw).expect("could not canonicalize test cwd");
     let test_cwd_str = test_cwd.to_string_lossy().to_string();
@@ -806,14 +837,23 @@ async fn e1_guided_claude_fires_hooks_end_to_end() {
         "Reply with the single word: pong",
     );
 
-    let ours = wait_for_session_in_cwd(&server.received, &test_cwd_str, "claude-code", E2E_GUIDED_TIMEOUT)
-        .await;
+    let ours = wait_for_session_in_cwd(
+        &server.received,
+        &test_cwd_str,
+        "claude-code",
+        E2E_GUIDED_TIMEOUT,
+    )
+    .await;
 
     eprintln!(
         "e1: received {} matching hook payloads: {:?}",
         ours.len(),
         ours.iter()
-            .map(|p| format!("{}/{}", p["agent"].as_str().unwrap_or("?"), p["event"].as_str().unwrap_or("?")))
+            .map(|p| format!(
+                "{}/{}",
+                p["agent"].as_str().unwrap_or("?"),
+                p["event"].as_str().unwrap_or("?")
+            ))
             .collect::<Vec<_>>()
     );
 
@@ -856,12 +896,16 @@ async fn e2_guided_codex_fires_hooks_end_to_end() {
     agent_terminal_lib::hook_config::ensure_hooks_installed().await;
 
     let Some(listener) = try_bind_hook_port().await else {
-        eprintln!("SKIP e2: port {} busy (agent-terminal running?)", agent_terminal_lib::identity::HOOK_PORT);
+        eprintln!(
+            "SKIP e2: port {} busy (agent-terminal running?)",
+            agent_terminal_lib::identity::HOOK_PORT
+        );
         return;
     };
     let server = start_collector(listener);
 
-    let test_cwd_raw = std::env::temp_dir().join(format!("agent-terminal-e2-{}", std::process::id()));
+    let test_cwd_raw =
+        std::env::temp_dir().join(format!("agent-terminal-e2-{}", std::process::id()));
     std::fs::create_dir_all(&test_cwd_raw).expect("could not create test cwd");
     let test_cwd = std::fs::canonicalize(&test_cwd_raw).expect("could not canonicalize test cwd");
     let test_cwd_str = test_cwd.to_string_lossy().to_string();
@@ -880,14 +924,18 @@ async fn e2_guided_codex_fires_hooks_end_to_end() {
         "Reply with the single word: pong",
     );
 
-    let ours = wait_for_session_in_cwd(&server.received, &test_cwd_str, "codex", E2E_GUIDED_TIMEOUT)
-        .await;
+    let ours =
+        wait_for_session_in_cwd(&server.received, &test_cwd_str, "codex", E2E_GUIDED_TIMEOUT).await;
 
     eprintln!(
         "e2: received {} matching hook payloads: {:?}",
         ours.len(),
         ours.iter()
-            .map(|p| format!("{}/{}", p["agent"].as_str().unwrap_or("?"), p["event"].as_str().unwrap_or("?")))
+            .map(|p| format!(
+                "{}/{}",
+                p["agent"].as_str().unwrap_or("?"),
+                p["event"].as_str().unwrap_or("?")
+            ))
             .collect::<Vec<_>>()
     );
 
@@ -904,4 +952,3 @@ async fn e2_guided_codex_fires_hooks_end_to_end() {
         "codex events received from our cwd but no SessionStart: {ours:?}"
     );
 }
-

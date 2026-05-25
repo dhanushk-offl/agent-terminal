@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use super::context::{AgentSignal, AgentSignalKind, CwdUpdate, ModContext, ModEvent};
 use super::Mod;
 use crate::hook_server::HookPayload;
-use tauri::{AppHandle, Emitter, async_runtime};
+use tauri::{async_runtime, AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 /// Shared `tab_id → cwd` table, written by the engine task whenever
@@ -25,11 +25,26 @@ use tokio::sync::mpsc;
 pub type CwdTable = Arc<Mutex<HashMap<String, String>>>;
 
 pub(super) enum ModMessage {
-    Open { tab_id: String, shell_pid: u32 },
-    Close { tab_id: String },
-    Output { tab_id: String, data: Vec<u8> },
-    Input { tab_id: String, data: Vec<u8> },
-    Resize { tab_id: String, cols: u16, rows: u16 },
+    Open {
+        tab_id: String,
+        shell_pid: u32,
+    },
+    Close {
+        tab_id: String,
+    },
+    Output {
+        tab_id: String,
+        data: Vec<u8>,
+    },
+    Input {
+        tab_id: String,
+        data: Vec<u8>,
+    },
+    Resize {
+        tab_id: String,
+        cols: u16,
+        rows: u16,
+    },
 }
 
 /// Cheap, cloneable handle to the MOD engine. The PTY read thread and Tauri
@@ -54,23 +69,38 @@ pub struct ModEngineHandle {
 
 impl ModEngineHandle {
     pub fn on_tab_open(&self, tab_id: &str, shell_pid: u32) {
-        let _ = self.lifecycle_tx.send(ModMessage::Open { tab_id: tab_id.to_string(), shell_pid });
+        let _ = self.lifecycle_tx.send(ModMessage::Open {
+            tab_id: tab_id.to_string(),
+            shell_pid,
+        });
     }
 
     pub fn on_tab_close(&self, tab_id: &str) {
-        let _ = self.lifecycle_tx.send(ModMessage::Close { tab_id: tab_id.to_string() });
+        let _ = self.lifecycle_tx.send(ModMessage::Close {
+            tab_id: tab_id.to_string(),
+        });
     }
 
     pub fn on_output(&self, tab_id: &str, data: Vec<u8>) {
-        let _ = self.tx.try_send(ModMessage::Output { tab_id: tab_id.to_string(), data });
+        let _ = self.tx.try_send(ModMessage::Output {
+            tab_id: tab_id.to_string(),
+            data,
+        });
     }
 
     pub fn on_input(&self, tab_id: &str, data: Vec<u8>) {
-        let _ = self.tx.try_send(ModMessage::Input { tab_id: tab_id.to_string(), data });
+        let _ = self.tx.try_send(ModMessage::Input {
+            tab_id: tab_id.to_string(),
+            data,
+        });
     }
 
     pub fn on_resize(&self, tab_id: &str, cols: u16, rows: u16) {
-        let _ = self.tx.try_send(ModMessage::Resize { tab_id: tab_id.to_string(), cols, rows });
+        let _ = self.tx.try_send(ModMessage::Resize {
+            tab_id: tab_id.to_string(),
+            cols,
+            rows,
+        });
     }
 }
 
@@ -127,7 +157,11 @@ pub struct ModEngine {
 impl ModEngine {
     pub fn builder() -> ModEngineBuilder {
         let (hook_tx, hook_rx) = mpsc::unbounded_channel::<HookPayload>();
-        ModEngineBuilder { mods: Vec::new(), hook_tx, hook_rx }
+        ModEngineBuilder {
+            mods: Vec::new(),
+            hook_tx,
+            hook_rx,
+        }
     }
 
     /// Returns a cheap cloneable handle suitable for passing to threads or commands.
@@ -176,14 +210,32 @@ impl ModEngine {
                         ModMessage::Open { tab_id, shell_pid } => {
                             shell_pid_table.insert(tab_id.clone(), shell_pid);
                             let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
-                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                            for m in &mut mods { m.on_open(&ctx); }
+                            let ctx = ModContext::new(
+                                &tab_id,
+                                &event_tx_dispatch,
+                                &cwd_tx,
+                                &agent_tx,
+                                current_cwd,
+                                shell_pid,
+                            );
+                            for m in &mut mods {
+                                m.on_open(&ctx);
+                            }
                         }
                         ModMessage::Close { tab_id } => {
                             let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                            for m in &mut mods { m.on_close(&ctx); }
+                            let ctx = ModContext::new(
+                                &tab_id,
+                                &event_tx_dispatch,
+                                &cwd_tx,
+                                &agent_tx,
+                                current_cwd,
+                                shell_pid,
+                            );
+                            for m in &mut mods {
+                                m.on_close(&ctx);
+                            }
                             // Drop the cwd entry too. Respawn doesn't need
                             // it preserved here — `respawn_in_place` reads
                             // the cwd into a local variable BEFORE issuing
@@ -200,32 +252,71 @@ impl ModEngine {
                         ModMessage::Output { tab_id, data } => {
                             let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                            for m in &mut mods { m.on_output(&data, &ctx); }
+                            let ctx = ModContext::new(
+                                &tab_id,
+                                &event_tx_dispatch,
+                                &cwd_tx,
+                                &agent_tx,
+                                current_cwd,
+                                shell_pid,
+                            );
+                            for m in &mut mods {
+                                m.on_output(&data, &ctx);
+                            }
                         }
                         ModMessage::Input { tab_id, data } => {
                             let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                            for m in &mut mods { m.on_input(&data, &ctx); }
+                            let ctx = ModContext::new(
+                                &tab_id,
+                                &event_tx_dispatch,
+                                &cwd_tx,
+                                &agent_tx,
+                                current_cwd,
+                                shell_pid,
+                            );
+                            for m in &mut mods {
+                                m.on_input(&data, &ctx);
+                            }
                         }
                         ModMessage::Resize { tab_id, cols, rows } => {
                             let current_cwd = cwd_table_task.lock().unwrap().get(&tab_id).cloned();
                             let shell_pid = shell_pid_table.get(&tab_id).copied().unwrap_or(0);
-                            let ctx = ModContext::new(&tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, current_cwd, shell_pid);
-                            for m in &mut mods { m.on_resize(cols, rows, &ctx); }
+                            let ctx = ModContext::new(
+                                &tab_id,
+                                &event_tx_dispatch,
+                                &cwd_tx,
+                                &agent_tx,
+                                current_cwd,
+                                shell_pid,
+                            );
+                            for m in &mut mods {
+                                m.on_resize(cols, rows, &ctx);
+                            }
                         }
                     }
                     // Drain CWD updates produced during this dispatch round.
                     let mut cwd_updates: Vec<(String, String)> = Vec::new();
                     while let Ok(upd) = cwd_rx.try_recv() {
-                        cwd_table_task.lock().unwrap().insert(upd.tab_id.clone(), upd.cwd.clone());
+                        cwd_table_task
+                            .lock()
+                            .unwrap()
+                            .insert(upd.tab_id.clone(), upd.cwd.clone());
                         cwd_updates.push((upd.tab_id, upd.cwd));
                     }
                     for (tab_id, cwd) in &cwd_updates {
                         let shell_pid = shell_pid_table.get(tab_id).copied().unwrap_or(0);
-                        let ctx = ModContext::new(tab_id, &event_tx_dispatch, &cwd_tx, &agent_tx, Some(cwd.clone()), shell_pid);
-                        for m in &mut mods { m.on_cwd_changed(cwd, &ctx); }
+                        let ctx = ModContext::new(
+                            tab_id,
+                            &event_tx_dispatch,
+                            &cwd_tx,
+                            &agent_tx,
+                            Some(cwd.clone()),
+                            shell_pid,
+                        );
+                        for m in &mut mods {
+                            m.on_cwd_changed(cwd, &ctx);
+                        }
                     }
                 }};
             }
@@ -283,7 +374,10 @@ impl ModEngine {
         });
 
         Self {
-            handle: ModEngineHandle { tx: msg_tx, lifecycle_tx },
+            handle: ModEngineHandle {
+                tx: msg_tx,
+                lifecycle_tx,
+            },
             cwd_table,
             _hook_tx_keepalive: hook_tx_keepalive,
         }

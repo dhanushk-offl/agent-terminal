@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::mod_engine::{Mod, ModContext};
 use crate::mod_engine::osc_parser::OscParser;
+use crate::mod_engine::{Mod, ModContext};
 
 /// Process lifecycle state for a single tab, driven by OSC 133 sequences.
 ///
@@ -120,4 +120,3 @@ impl Mod for ProcessTrackerMod {
         self.tabs.remove(ctx.tab_id);
     }
 }
-
