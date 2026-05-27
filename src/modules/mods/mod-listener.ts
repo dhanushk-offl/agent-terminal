@@ -133,7 +133,10 @@ function handleProcessInfo(
     listeningPorts: [...new Set(ports)],
   }
   const agentProc = processes.find(
-    (p) => p.name === 'claude-code' || p.name === 'codex',
+    (p) =>
+      p.name === 'claude-code' ||
+      p.name === 'codex' ||
+      p.name === 'open-code',
   )
   if (agentProc) {
     patch.agentCmd = agentProc.command
@@ -142,7 +145,9 @@ function handleProcessInfo(
         ? 'Claude Code'
         : agentProc.name === 'codex'
           ? 'Codex CLI'
-          : agentProc.name
+          : agentProc.name === 'open-code'
+            ? 'OpenCode'
+            : agentProc.name
   }
   updateTabMeta(tabId, patch)
 }

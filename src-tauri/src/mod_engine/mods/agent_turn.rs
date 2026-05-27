@@ -254,9 +254,13 @@ impl AgentTurnMod {
             // Claude/Codex equivalent (e.g. "status.awaiting") are
             // mapped by the plugin before they reach us.
             "open-code" => match event_key.as_str() {
+                // Bridge-mapped names (our opencode-bridge.js maps OpenCode plugin
+                // events to these Claude/Codex equivalents before POSTing).
+                // Also accepts raw OpenCode event types after normalisation:
+                // `session.start` → `sessionstart`, `message.start` → `messagestart`, etc.
                 "sessionstart" => Some(TurnAction::SessionStart),
                 "userpromptsubmit" | "messagestart" => Some(TurnAction::InProgress),
-                "pretooluse" => {
+                "pretooluse" | "toolcall" => {
                     if Self::is_permission_request(payload) {
                         Some(TurnAction::Awaiting)
                     } else {
@@ -266,11 +270,15 @@ impl AgentTurnMod {
                 "notification"
                 | "permissionrequest"
                 | "permissionrequested"
-                | "permissionasked" => Some(TurnAction::Awaiting),
+                | "permissionasked"
+                | "statusawaiting" => Some(TurnAction::Awaiting),
                 "stop" | "sessionstop" | "messagecomplete" | "messagestop" => {
                     Some(TurnAction::Completed)
                 }
                 "sessionend" | "sessionended" => Some(TurnAction::SessionEnd),
+                // `toolresult` and `posttooluse` — tool finished, agent still
+                // generating. Keep as InProgress so the pulsing ring stays on.
+                "posttooluse" | "toolresult" => Some(TurnAction::InProgress),
                 _ => None,
             },
 

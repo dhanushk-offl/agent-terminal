@@ -52,11 +52,16 @@ const AgentTerminalBridge = async () => {
    * OpenCode fires events with a `type` field. We normalize these to match
    * the event names that Claude Code and Codex already use, so AgentTurnMod's
    * `normalize_action()` can handle them with a single code path.
+   *
+   * Both dotted OpenCode types ("session.start") and already-mapped names
+   * ("SessionStart") are handled — the latter for forwards compatibility if
+   * a future plugin or bridge sends pre-mapped names.
    */
   function mapEventType(event) {
     const type = (event?.type ?? event?.event ?? "").toString()
 
     const map = {
+      // OpenCode native dotted types
       "session.start": "SessionStart",
       "session.end": "SessionEnd",
       "message.start": "UserPromptSubmit",
@@ -68,6 +73,14 @@ const AgentTerminalBridge = async () => {
       "permission.response": "PostToolUse",
       "status.awaiting": "Notification",
       "status.idle": "Stop",
+      // Already-mapped names (forwards compatibility)
+      "SessionStart": "SessionStart",
+      "UserPromptSubmit": "UserPromptSubmit",
+      "PreToolUse": "PreToolUse",
+      "Notification": "Notification",
+      "PermissionRequest": "PermissionRequest",
+      "Stop": "Stop",
+      "SessionEnd": "SessionEnd",
     }
 
     return map[type] ?? type
