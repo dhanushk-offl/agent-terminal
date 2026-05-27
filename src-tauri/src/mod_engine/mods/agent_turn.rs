@@ -43,6 +43,9 @@ enum TurnAction {
     Awaiting,
     Completed,
     SessionEnd,
+    /// No turn state change; used for events that carry auxiliary data
+    /// (e.g. model_changed) but should not transition the state machine.
+    NoOp,
 }
 
 // ─── Mod ─────────────────────────────────────────────────────────────────────
@@ -382,7 +385,19 @@ impl Mod for AgentTurnMod {
 
     fn on_hook_event(&mut self, payload: &HookPayload) {
         // Filter to known agents so stray POSTs from other tools don't affect state.
-        let Some(action) = Self::normalize_action(payload) else {
+        // `model_changed` events are a special case: they carry no turn state but
+        // must still pass the gate so the model field can be forwarded to the
+        // frontend. We normalise them to a no-op action that skips turn dispatch.
+        let action = Self::normalize_action(payload).or_else(|| {
+            let event_key = Self::normalize_token(payload.event.as_str());
+            if event_key == "modelchanged" {
+                Some(TurnAction::NoOp)
+            } else {
+                None
+            }
+        });
+
+        let Some(action) = action else {
             return;
         };
 
@@ -412,6 +427,12 @@ impl Mod for AgentTurnMod {
             }
         }
 
+        // NoOp events (e.g. model_changed) carry model data but no turn
+        // state change — skip the turn dispatch entirely.
+        if matches!(action, TurnAction::NoOp) {
+            return;
+        }
+
         match action {
             TurnAction::SessionStart => self.handle_session_start(payload),
             TurnAction::InProgress => {
@@ -424,6 +445,7 @@ impl Mod for AgentTurnMod {
             TurnAction::Awaiting => self.handle_awaiting(payload),
             TurnAction::Completed => self.handle_completed(payload),
             TurnAction::SessionEnd => self.handle_session_end(payload),
+            TurnAction::NoOp => {} // handled above; kept for exhaustiveness
         }
     }
 }

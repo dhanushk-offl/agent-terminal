@@ -46,12 +46,14 @@
  */
 
 const AgentTerminalBridge = async () => {
-  const port = process.env.AGENT_TERMINAL_HOOK_PORT || "47384"
+  // biome-ignore lint/style/noProcessEnv: OpenCode plugins receive app context through env vars injected into the PTY.
+  const env = process.env
+  const port = env.AGENT_TERMINAL_HOOK_PORT || '47384'
   const endpoint = `http://127.0.0.1:${port}/hook`
 
   function firstString(...values) {
     for (const value of values) {
-      if (typeof value === "string" && value.trim()) return value
+      if (typeof value === 'string' && value.trim()) return value
     }
     return undefined
   }
@@ -67,51 +69,48 @@ const AgentTerminalBridge = async () => {
    * ("SessionStart") are handled — the latter for forwards compatibility if
    * a future plugin or bridge sends pre-mapped names.
    */
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Keep this as a flat event-name map matching OpenCode's plugin API.
   function mapEvent(event) {
-    const type = (event?.type ?? event?.event ?? "").toString()
+    const type = (event?.type ?? event?.event ?? '').toString()
 
-    const sessionId = firstString(
-      event?.sessionID,
-      event?.session_id,
-      event?.properties?.sessionID,
-    )
+    const sessionId = extractSessionId(event)
     const payloadBase = {
-      agent: "open-code",
-      tab_id: process.env.AGENT_TERMINAL_TAB_ID || undefined,
+      agent: 'open-code',
+      tab_id: env.AGENT_TERMINAL_TAB_ID || undefined,
       session_id: sessionId,
       cwd: event?.properties?.cwd || event?.cwd || process.cwd(),
     }
 
     switch (type) {
       // ── Session lifecycle ────────────────────────────────────────────
-      case "session.created":
-        return [{ ...payloadBase, event: "SessionStart" }]
+      case 'session.created':
+        return [{ ...payloadBase, event: 'SessionStart' }]
 
       // ── Agent generating ──────────────────────────────────────────
-      case "session.idle":
+      case 'session.idle':
         // OpenCode fires session.idle when the agent finishes responding.
         // This is our "turn complete" signal — more reliable than message.updated
         // because it only fires when the entire turn is done.
-        return [{ ...payloadBase, event: "Stop" }]
+        return [{ ...payloadBase, event: 'Stop' }]
 
       // ── Agent status ─────────────────────────────────────────────────
-      case "session.status": {
+      case 'session.status': {
         const status = event?.properties?.status ?? event?.status
-        const statusType = (status?.type ?? "").toString()
-        if (statusType === "busy") {
-          return [{ ...payloadBase, event: "UserPromptSubmit" }]
+        const statusType = (status?.type ?? '').toString()
+        if (statusType === 'busy') {
+          return [{ ...payloadBase, event: 'UserPromptSubmit' }]
         }
-        if (statusType === "idle") {
-          return [{ ...payloadBase, event: "Stop" }]
+        if (statusType === 'idle') {
+          return [{ ...payloadBase, event: 'Stop' }]
         }
-        if (statusType === "retry") {
-          return [{ ...payloadBase, event: "UserPromptSubmit" }]
+        if (statusType === 'retry') {
+          return [{ ...payloadBase, event: 'UserPromptSubmit' }]
         }
         return [] // Unknown status subtype
       }
 
       // ── Permission requests (the "awaiting" state) ──────────────────
-      case "permission.updated": {
+      case 'permission.updated': {
         const title = firstString(
           event?.properties?.title,
           event?.title,
@@ -121,87 +120,102 @@ const AgentTerminalBridge = async () => {
           event?.properties?.toolName,
           event?.properties?.tool_name,
         )
-        return [{
-          ...payloadBase,
-          event: "PermissionRequest",
-          tool_name: toolName,
-          message: title,
-        }]
+        return [
+          {
+            ...payloadBase,
+            event: 'PermissionRequest',
+            tool_name: toolName,
+            message: title,
+          },
+        ]
       }
 
-      case "permission.replied":
-        return [{ ...payloadBase, event: "UserPromptSubmit" }]
+      case 'permission.replied':
+        return [{ ...payloadBase, event: 'UserPromptSubmit' }]
 
       // ── Message lifecycle ─────────────────────────────────────────────
-      case "message.updated": {
+      case 'message.updated': {
         const info = event?.properties?.info ?? event?.info
         if (!info) return []
 
-        const role = (info?.role ?? "").toString()
-        if (role === "assistant") {
+        const role = (info?.role ?? '').toString()
+        if (role === 'assistant') {
           const text = firstString(info?.summary?.body, info?.text)
-          return [{
-            ...payloadBase,
-            event: "Notification",
-            last_assistant_message: text,
-          }]
+          return [
+            {
+              ...payloadBase,
+              event: 'Notification',
+              last_assistant_message: text,
+            },
+          ]
         }
         return []
       }
 
       // ── Message parts (streaming text) — skip for state tracking ─────
-      case "message.part.updated":
-      case "message.removed":
+      case 'message.part.updated':
+      case 'message.removed':
         return []
 
       // ── Tool execution ────────────────────────────────────────────────
-      case "command.execute.before":
-      case "tool.execute.before":
-        return [{ ...payloadBase, event: "PreToolUse", tool_name: event?.properties?.tool || event?.tool }]
+      case 'command.execute.before':
+      case 'tool.execute.before':
+        return [
+          {
+            ...payloadBase,
+            event: 'PreToolUse',
+            tool_name: event?.properties?.tool || event?.tool,
+          },
+        ]
 
-      case "tool.execute.after":
-        return [{ ...payloadBase, event: "PostToolUse" }]
+      case 'tool.execute.after':
+        return [{ ...payloadBase, event: 'PostToolUse' }]
 
       // ── Environment injection — skip entirely ─────────────────────────
-      case "shell.env":
+      case 'shell.env':
         return []
 
       // ── Session end ──────────────────────────────────────────────────
-      case "session.deleted":
-        return [{ ...payloadBase, event: "SessionEnd" }]
+      case 'session.deleted':
+        return [{ ...payloadBase, event: 'SessionEnd' }]
 
       // ── Session update ──────────────────────────────────────────────
-      case "session.updated":
-      case "session.compacted":
+      // OpenCode often learns/changes the active model after session.created,
+      // especially when the user picks a model from the TUI before the first
+      // prompt. Preserve these as no-op model updates instead of dropping them.
+      case 'session.updated':
+        return [{ ...payloadBase, event: 'ModelChanged' }]
+
+      case 'session.compacted':
         return []
 
       // ── File/lsp/vcs events — skip ──────────────────────────────────
-      case "file.edited":
-      case "file.watcher.updated":
-      case "lsp.updated":
-      case "lsp.client.diagnostics":
-      case "vcs.branch.updated":
-      case "todo.updated":
+      case 'file.edited':
+      case 'file.watcher.updated':
+      case 'lsp.updated':
+      case 'lsp.client.diagnostics':
+      case 'vcs.branch.updated':
+      case 'todo.updated':
         return []
 
       // ── TUI-specific events — skip ──────────────────────────────────
-      case "tui.prompt.append":
-      case "tui.command.execute":
-      case "tui.toast.show":
+      case 'tui.prompt.append':
+      case 'tui.command.execute':
+      case 'tui.toast.show':
         return []
 
       // ── PTY / server events — skip ──────────────────────────────────
-      case "pty.created":
-      case "pty.updated":
-      case "pty.exited":
-      case "pty.deleted":
-      case "server.instance.disposed":
-      case "server.connected":
+      case 'pty.created':
+      case 'pty.updated':
+      case 'pty.exited':
+      case 'pty.deleted':
+      case 'server.instance.disposed':
+      case 'server.connected':
         return []
 
       // ── Installation events — skip ───────────────────────────────────
-      case "installation.updated":
-      case "installation.update-available":
+      case 'installation.updated':
+      case 'installation.update-available':
         return []
 
       // ── Unknown event type ───────────────────────────────────────────
@@ -211,29 +225,34 @@ const AgentTerminalBridge = async () => {
   }
 
   function extractModel(event) {
+    const info = event?.properties?.info ?? event?.info
+    const status = event?.properties?.status ?? event?.status
     return firstString(
       event?.model,
       event?.activeModel,
+      event?.modelID,
+      event?.modelId,
+      event?.properties?.model,
+      event?.properties?.activeModel,
+      event?.properties?.modelID,
+      event?.properties?.modelId,
       event?.session?.model,
       event?.session?.activeModel,
+      event?.session?.modelID,
+      event?.session?.modelId,
+      info?.model,
+      info?.activeModel,
+      info?.modelID,
+      info?.modelId,
+      status?.model,
+      status?.activeModel,
+      status?.modelID,
+      status?.modelId,
       event?.data?.model,
       event?.data?.activeModel,
+      event?.data?.modelID,
+      event?.data?.modelId,
       event?.settings?.model,
-    )
-  }
-
-  function extractMessage(event) {
-    return firstString(
-      event?.message,
-      event?.prompt,
-      event?.reason,
-      event?.status,
-      event?.state,
-      event?.statusMessage,
-      event?.description,
-      event?.data?.message,
-      event?.data?.prompt,
-      event?.data?.reason,
     )
   }
 
@@ -242,6 +261,14 @@ const AgentTerminalBridge = async () => {
       event?.sessionID,
       event?.sessionId,
       event?.conversationId,
+      event?.session_id,
+      event?.properties?.sessionID,
+      event?.properties?.sessionId,
+      event?.properties?.session_id,
+      event?.properties?.info?.id,
+      event?.properties?.info?.sessionID,
+      event?.properties?.info?.sessionId,
+      event?.properties?.info?.session_id,
       event?.session?.id,
       event?.session?.sessionId,
       event?.session?.conversationId,
@@ -253,7 +280,17 @@ const AgentTerminalBridge = async () => {
     event: async ({ event }) => {
       const payloads = mapEvent(event)
 
+      // Extract model info from any event that includes one. The model is
+      // attached to every mapped payload so AgentTurnMod's on_hook_event
+      // can forward it to the frontend even if the event type doesn't
+      // normally carry a model field. This works because the Rust side
+      // deserialises all fields from the JSON body and only uses the ones
+      // it knows about — extra fields like `model` are preserved in the
+      // HookPayload struct and forwarded before the event-type match.
+      const model = extractModel(event)
       for (const payload of payloads) {
+        if (model) payload.model = model
+
         // Remove undefined values so serde deserialization doesn't choke on
         // JSON null vs absent field mismatches.
         Object.keys(payload).forEach((k) => {
@@ -262,8 +299,8 @@ const AgentTerminalBridge = async () => {
 
         try {
           await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           })
         } catch {

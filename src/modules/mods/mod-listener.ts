@@ -134,9 +134,7 @@ function handleProcessInfo(
   }
   const agentProc = processes.find(
     (p) =>
-      p.name === 'claude-code' ||
-      p.name === 'codex' ||
-      p.name === 'open-code',
+      p.name === 'claude-code' || p.name === 'codex' || p.name === 'open-code',
   )
   if (agentProc) {
     patch.agentCmd = agentProc.command
@@ -216,11 +214,12 @@ function dispatch({
         }, AGENT_DONE_LINGER_MS)
         agentLingerTimers.set(tabId, t)
       } else if (state === 'idle') {
-        // SessionEnd clears everything immediately.
+        // Idle clears transient turn UI, but the active model can remain valid
+        // across OpenCode's busy/idle status stream. Process exit clears it in
+        // `tab_type_changed` when the tab returns to shell.
         updateTabMeta(tabId, {
           agentState: 'idle',
           agentMessage: undefined,
-          agentModel: undefined,
         })
       } else {
         // in-progress / awaiting — clear any lingering completed state.

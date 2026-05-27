@@ -20,12 +20,32 @@
  * Terminal, VS Code, Chrome. Safe on Ctrl because Ctrl+Tab has no
  * readline binding (Tab itself is shell-bound but Ctrl+Tab isn't).
  *
+ * On Linux and Windows, the app's primary modifier is Ctrl. xterm consumes
+ * Ctrl chords unless we explicitly let them bubble, so keep this allowlist
+ * aligned with the primary shortcuts registered in `WorkspaceLayout` and
+ * `TabSwitcher`. Do not blanket-bubble every Ctrl chord: Ctrl+C/V and many
+ * readline bindings still belong to the terminal.
+ *
  * Browser-level shortcuts (Cmd+C/V copy/paste) are handled above xterm
  * in the contenteditable layer and are unaffected by this filter.
  */
 function isAppShortcut(e: KeyboardEvent): boolean {
   if (e.metaKey) return true
   if (e.ctrlKey && e.key === 'Tab') return true
+  if (e.ctrlKey && !e.metaKey && !e.altKey) {
+    const key = e.key.toLowerCase()
+    const code = e.code
+    if (/^[0-9]$/.test(key)) return true
+    if (['t', 'w', 'k', 'a', 'f', 'g', 'p'].includes(key)) return true
+    if (key === '-' || key === '=' || key === '+') return true
+    return (
+      code === 'Minus' ||
+      code === 'Equal' ||
+      code === 'Digit0' ||
+      code === 'BracketLeft' ||
+      code === 'BracketRight'
+    )
+  }
   return false
 }
 

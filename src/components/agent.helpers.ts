@@ -67,7 +67,7 @@ export function hasDangerFlag(agentCmd: string | undefined): boolean {
  */
 export function parseModelFlag(agentCmd: string | undefined): string | null {
   if (!agentCmd) return null
-  const match = agentCmd.match(/(?:--model|-m)\s+(\S+)/)
+  const match = agentCmd.match(/(?:--model(?:=|\s+)|-m\s+)(\S+)/)
   return match?.[1] ?? null
 }
 

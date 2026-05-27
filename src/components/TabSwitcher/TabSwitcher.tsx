@@ -29,7 +29,7 @@ import { $tabRecency, $tabRecencyTimes } from '@/modules/stores/$tabRecency'
 import { MONO_FONT } from '@/screens/workspace/workspace.helpers'
 
 /* ---------------------------------------------------------------------------
- * TabSwitcher — Cmd+P quick-switch palette.
+ * TabSwitcher — Primary+P quick-switch palette.
  *
  * Lists every open tab sorted by recency. Filterable by typing into the
  * search input — case-insensitive substring match across label + project
@@ -49,9 +49,9 @@ const hotkeyOpts = { preventDefault: true, enableOnFormTags: true } as const
 export function TabSwitcher() {
   const [open, setOpen] = useState(false)
 
-  // ⌘P — toggle. Matches VS Code / Cursor / Sublime quick-switcher.
+  // Primary+P — toggle. Matches VS Code / Cursor / Sublime quick-switcher.
   // preventDefault suppresses the webview's default print dialog.
-  useHotkeys(`${Mod.Meta}+${Keys.P}`, () => setOpen((v) => !v), hotkeyOpts)
+  useHotkeys(`${Mod.Primary}+${Keys.P}`, () => setOpen((v) => !v), hotkeyOpts)
 
   const projects = useStore($projects)
   const recency = useStore($tabRecency)
