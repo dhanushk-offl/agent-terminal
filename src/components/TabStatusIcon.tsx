@@ -54,6 +54,7 @@ export function TabStatusIcon({ tabId, active = false }: Props) {
   const meta = allMeta[tabId]
   const status = meta?.status ?? 'idle'
   const type = meta?.type ?? 'shell'
+  const agentState = meta?.agentState
   // showDone derived from the store — every instance of this component for
   // the same tab agrees on the visual. The 10s linger is enforced by a
   // single per-tab setTimeout in mod-listener that clears `doneAt` directly.
@@ -65,10 +66,10 @@ export function TabStatusIcon({ tabId, active = false }: Props) {
   // Also clear agent completed linger — user has seen the result.
   useEffect(() => {
     if (active && showDone) updateTabMeta(tabId, { doneAt: undefined })
-    if (active && meta?.agentState === 'completed') {
+    if (active && agentState === 'completed') {
       updateTabMeta(tabId, { agentState: 'idle', agentMessage: undefined })
     }
-  }, [active, showDone, tabId])
+  }, [active, agentState, showDone, tabId])
 
   if (type === 'agent') {
     return (
