@@ -467,6 +467,19 @@ pub async fn ensure_opencode_plugin_installed() -> Result<(), Box<dyn std::error
         None => return Ok(()),
     };
 
+    // Remove the legacy plugin from ~/.config/opencode/plugin/ — this
+    // directory is the OLD location and has a stale bridge that uses the
+    // wrong port and event mapping. Only the plugins/ directory is used
+    // by newer OpenCode versions.
+    let legacy_plugin = home.join(".config/opencode/plugin/agent-terminal-bridge.js");
+    if legacy_plugin.exists() {
+        if let Err(e) = tokio::fs::remove_file(&legacy_plugin).await {
+            eprintln!("[hook_config] failed to remove legacy opencode plugin: {e}");
+        } else {
+            eprintln!("[hook_config] removed legacy opencode plugin from plugin/");
+        }
+    }
+
     let plugin_dir = home.join(".config/opencode/plugins");
     tokio::fs::create_dir_all(&plugin_dir).await?;
 

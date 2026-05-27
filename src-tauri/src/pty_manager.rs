@@ -421,6 +421,14 @@ pub fn try_reattach(
 fn build_shell_command(shell_path: &str, cwd: Option<&str>, tab_id: &str) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell_path);
     cmd.env("AGENT_TERMINAL_TAB_ID", tab_id);
+    // Inject the hook server port so OpenCode's bridge plugin can reach it.
+    // Hook scripts get the port baked in at install time, but JS plugins
+    // loaded by OpenCode use this env var to find the right port.
+    // Dev builds listen on 47385, prod on 47384.
+    cmd.env(
+        "AGENT_TERMINAL_HOOK_PORT",
+        crate::identity::HOOK_PORT.to_string(),
+    );
 
     // macOS launchd starts GUI apps with a minimal env (no TERM, no user
     // PATH). Without TERM zsh can't initialize zle and the user sees doubled
