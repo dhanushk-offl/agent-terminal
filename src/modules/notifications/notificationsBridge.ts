@@ -87,4 +87,19 @@ export function startNotificationsBridge(): void {
       navigateToTab(project_id, tab_id)
     },
   )
+
+  // Dismiss OS notifications when the user navigates to the relevant tab.
+  // Zed does this for its terminal bell notification — when the panel becomes
+  // visible, the popup is dismissed. We mirror this: when the active tab
+  // changes, cancel any pending OS notification for the now-active tab.
+  $activeTabId.listen((tabMap) => {
+    pushActiveTab()
+    for (const [projectId, tabId] of Object.entries(tabMap)) {
+      if (tabId) {
+        void invoke('notif_cancel', {
+          tabId: makeTabKey(projectId, tabId),
+        }).catch(() => {})
+      }
+    }
+  })
 }

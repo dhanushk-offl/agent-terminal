@@ -48,6 +48,7 @@ export function deriveAgentState(meta: TabMeta | undefined): AgentState {
  * Per-agent flags:
  *   - claude-code → --dangerously-skip-permissions
  *   - codex       → --yolo
+ *   - opencode    → --yolo (same flag, different agent)
  *
  * When adding a new agent, add its full-permissions flag here.
  * The 🤘 badge and tooltip are the same regardless of which flag triggered it.

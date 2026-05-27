@@ -120,6 +120,12 @@ fn resolve_agent_name(name: &str, command: &str) -> String {
     if name == "codex" {
         return "codex".to_string();
     }
+    // OpenCode's binary is "opencode". When it runs via a Node.js wrapper
+    // (npx, bunx), the process name shows as "node" — resolve via the
+    // command line. The Go binary's process name is "opencode" directly.
+    if name == "opencode" {
+        return "open-code".to_string();
+    }
 
     if name.starts_with("node") {
         // Node.js wrapper scripts (e.g. /usr/local/bin/codex) exec the JS
@@ -137,6 +143,9 @@ fn resolve_agent_name(name: &str, command: &str) -> String {
         if exe_name == "claude" {
             return "claude-code".to_string();
         }
+        if exe_name == "opencode" {
+            return "open-code".to_string();
+        }
         // argv[0] is the node binary itself — check the remaining args for
         // agent script paths like ".../codex.js" or ".../claude/...".
         // We check EVERY path segment (not just the basename) so paths like
@@ -148,6 +157,11 @@ fn resolve_agent_name(name: &str, command: &str) -> String {
                 }
                 if segment == "claude" || segment.starts_with("claude.") {
                     return "claude-code".to_string();
+                }
+                // OpenCode's CLI entry point is typically at .../opencode/bin/opencode
+                // or invoked as `npx opencode` / `bunx opencode`.
+                if segment == "opencode" || segment.starts_with("opencode.") {
+                    return "open-code".to_string();
                 }
             }
         }
@@ -166,7 +180,7 @@ fn diff_agent_pids(
         let raw_name = proc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let cmd = proc.get("command").and_then(|c| c.as_str()).unwrap_or("");
         let resolved = resolve_agent_name(raw_name, cmd);
-        if resolved == "claude-code" || resolved == "codex"
+        if resolved == "claude-code" || resolved == "codex" || resolved == "open-code"
         {
             if let Some(pid) = proc.get("pid").and_then(|p| p.as_u64()) {
                 current_agents.insert(resolved, (pid as u32, cmd.to_string()));
@@ -289,7 +303,7 @@ async fn scan_processes(shell_pid: u32) -> Vec<serde_json::Value> {
             // doesn't include flags like --model. If a grandchild resolves to
             // the same agent, use its command so the status bar shows the real
             // invocation including any model flags.
-            if resolved_name == "claude-code" || resolved_name == "codex"
+            if resolved_name == "claude-code" || resolved_name == "codex" || resolved_name == "open-code"
             {
                 if let Some(gcs) = child_to_grandchildren.get(&pid) {
                     for gc_pid in gcs {

@@ -157,7 +157,11 @@ impl AgentTurnMod {
         match canonical.as_str() {
             "claude-code" | "claude" | "claudecode" | "claudecli" => Some("claude-code"),
             "codex" | "codex-cli" | "codexcli" | "openai-codex" => Some("codex"),
-
+            // OpenCode variants — the CLI binary is "opencode", but the
+            // bridge plugin uses "open-code" as the canonical agent ID.
+            // Various capitalisations and hyphenations are normalised so
+            // hook payloads from different plugin versions all route correctly.
+            "open-code" | "opencode" | "opencode-cli" | "opencodecli" => Some("open-code"),
             _ => None,
         }
     }
@@ -243,6 +247,32 @@ impl AgentTurnMod {
                 _ => None,
             },
 
+            // OpenCode uses a JS plugin system. The bridge plugin maps
+            // OpenCode's event types to the same event names used by
+            // Claude Code and Codex, so the same normalisation logic
+            // applies. OpenCode-specific event types that don't have a
+            // Claude/Codex equivalent (e.g. "status.awaiting") are
+            // mapped by the plugin before they reach us.
+            "open-code" => match event_key.as_str() {
+                "sessionstart" => Some(TurnAction::SessionStart),
+                "userpromptsubmit" | "messagestart" => Some(TurnAction::InProgress),
+                "pretooluse" => {
+                    if Self::is_permission_request(payload) {
+                        Some(TurnAction::Awaiting)
+                    } else {
+                        Some(TurnAction::InProgress)
+                    }
+                }
+                "notification"
+                | "permissionrequest"
+                | "permissionrequested"
+                | "permissionasked" => Some(TurnAction::Awaiting),
+                "stop" | "sessionstop" | "messagecomplete" | "messagestop" => {
+                    Some(TurnAction::Completed)
+                }
+                "sessionend" | "sessionended" => Some(TurnAction::SessionEnd),
+                _ => None,
+            },
 
             _ => None,
         }

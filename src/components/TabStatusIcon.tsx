@@ -62,8 +62,12 @@ export function TabStatusIcon({ tabId, active = false }: Props) {
   // Navigating to the tab counts as acknowledgement — clear the done stamp
   // immediately so the green dot disappears across every surface (sidebar,
   // tab bar, palette) in the same tick.
+  // Also clear agent completed linger — user has seen the result.
   useEffect(() => {
     if (active && showDone) updateTabMeta(tabId, { doneAt: undefined })
+    if (active && meta?.agentState === 'completed') {
+      updateTabMeta(tabId, { agentState: 'idle', agentMessage: undefined })
+    }
   }, [active, showDone, tabId])
 
   if (type === 'agent') {

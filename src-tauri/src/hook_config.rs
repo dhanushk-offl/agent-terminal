@@ -95,6 +95,19 @@ pub static AGENT_HOOK_CONFIGS: &[AgentHookConfig] = &[
             AgentHookEvent { event_name: "Stop" },
         ],
     },
+    // OpenCode uses a JavaScript plugin system (not file-based hooks), so
+    // the `events` list is empty — the bridge plugin handles event mapping.
+    // The entry is still needed for `config_for_agent_id()` lookups (display
+    // name resolution, branding) and `display_name_for_agent_id()`.
+    // Hook script installation is skipped for agents with empty `events`.
+    AgentHookConfig {
+        agent_name: "OpenCode",
+        hook_stem: "opencode",
+        agent_id: "open-code",
+        config_tilde_path: "~/.config/opencode/opencode.jsonc",
+        timeout_ms: 5_000,
+        events: &[],
+    },
 ];
 
 /// Human-readable display name for every supported agent.
@@ -105,6 +118,7 @@ pub fn display_name_for_agent_id(agent_id: &str) -> Option<&'static str> {
     match agent_id {
         "claude-code" => Some("Claude Code"),
         "codex" => Some("Codex CLI"),
+        "open-code" => Some("OpenCode"),
         _ => None,
     }
 }
@@ -127,6 +141,12 @@ pub fn config_for_agent_id(agent_id: &str) -> Option<&'static AgentHookConfig> {
 
 /// Silently installs/verifies hooks for all registered agents.
 /// Called once at app startup. Never panics, never returns an error to the caller.
+///
+/// Agents with an empty `events` list (e.g. OpenCode, which uses a plugin
+/// system instead of file-based hooks) are skipped — hook script installation
+/// is unnecessary for them. They still need entries in `AGENT_HOOK_CONFIGS`
+/// for `display_name_for_agent_id()` lookups. Their plugin bridge is installed
+/// separately by `ensure_opencode_plugin_installed()`.
 pub async fn ensure_hooks_installed() {
     let home = match dirs::home_dir() {
         Some(h) => h,
@@ -139,12 +159,23 @@ pub async fn ensure_hooks_installed() {
         .join(format!(".{}", crate::identity::NAMESPACE))
         .join("hooks");
     for config in AGENT_HOOK_CONFIGS {
+        // Agents with no hook events (plugin-based agents like OpenCode)
+        // don't need a hook script or config merge.
+        if config.events.is_empty() {
+            continue;
+        }
         if let Err(e) = install_for_agent(config, &home, &hooks_dir).await {
             eprintln!(
                 "[hook_config] failed to install hooks for {}: {e}",
                 config.agent_name
             );
         }
+    }
+
+    // Install the OpenCode bridge plugin separately — it uses a JS plugin
+    // system rather than file-based hooks.
+    if let Err(e) = ensure_opencode_plugin_installed().await {
+        eprintln!("[hook_config] failed to install opencode plugin: {e}");
     }
 }
 
@@ -416,6 +447,42 @@ fn expand_tilde(path: &str, home: &Path) -> PathBuf {
     } else {
         PathBuf::from(path)
     }
+}
+
+// ─── OpenCode plugin installation ────────────────────────────────────────────
+
+/// The bridge plugin that forwards OpenCode plugin events to our hook server.
+/// Installed into `~/.config/opencode/plugins/agent-terminal-bridge.js`.
+///
+/// OpenCode doesn't use file-based hooks (Claude Code's `settings.json` or
+/// Codex's `hooks.json`). Instead it loads JavaScript plugins from
+/// `~/.config/opencode/plugins/`. This function embeds the bridge plugin
+/// as a compile-time string constant and writes it to disk on startup —
+/// same idempotent pattern as the hook scripts for Claude/Codex.
+const OPENCODE_BRIDGE_PLUGIN: &str = include_str!("../plugins/opencode-bridge.js");
+
+pub async fn ensure_opencode_plugin_installed() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return Ok(()),
+    };
+
+    let plugin_dir = home.join(".config/opencode/plugins");
+    tokio::fs::create_dir_all(&plugin_dir).await?;
+
+    let plugin_path = plugin_dir.join("agent-terminal-bridge.js");
+
+    // Idempotent: skip write if content is already current.
+    if let Ok(existing) = tokio::fs::read_to_string(&plugin_path).await {
+        if existing == OPENCODE_BRIDGE_PLUGIN {
+            return Ok(());
+        }
+    }
+
+    tokio::fs::write(&plugin_path, OPENCODE_BRIDGE_PLUGIN).await?;
+
+    eprintln!("[hook_config] installed/updated opencode bridge plugin");
+    Ok(())
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────

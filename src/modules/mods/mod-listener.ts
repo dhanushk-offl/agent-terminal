@@ -46,6 +46,31 @@ type ModEventPayload = {
   data: unknown
 }
 
+/* ---------------------------------------------------------------------------
+ * Agent done-linger timers
+ *
+ * When an agent transitions to 'completed' we schedule an auto-clear timer
+ * that transitions the badge back to 'idle'. Without this the green checkmark
+ * would persist forever (agent sessions don't self-clear like shell tabs).
+ *
+ * Two things clear the timer:
+ *   1. The timer itself fires (30s for agents — they're slower than shells)
+ *   2. The user navigates to the tab (acknowledges the result immediately)
+ *
+ * This mirrors the shell-tab doneAt timer but for the agent lifecycle.
+ * -------------------------------------------------------------------------*/
+
+const AGENT_DONE_LINGER_MS = 30_000
+const agentLingerTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function cancelAgentLinger(tabId: string): void {
+  const t = agentLingerTimers.get(tabId)
+  if (t) {
+    clearTimeout(t)
+    agentLingerTimers.delete(tabId)
+  }
+}
+
 /**
  * Starts listening for `mod:event` events from the Rust MOD engine and
  * dispatches them into `$tabMeta`. Call once during app bootstrap, before render.
@@ -173,10 +198,29 @@ function dispatch({
         state: AgentTurnState
         message?: string
       }
-      updateTabMeta(tabId, {
-        agentState: state,
-        agentMessage: message ?? undefined,
-      })
+      cancelAgentLinger(tabId)
+
+      if (state === 'completed') {
+        updateTabMeta(tabId, { agentState: state, agentMessage: message })
+        // Auto-clear the completed badge after 30s so it doesn't persist forever.
+        // Shell tabs have `doneAt` with a 10s timeout; agents need longer
+        // because their turns are more significant (users should notice them).
+        const t = setTimeout(() => {
+          agentLingerTimers.delete(tabId)
+          updateTabMeta(tabId, { agentState: 'idle', agentMessage: undefined })
+        }, AGENT_DONE_LINGER_MS)
+        agentLingerTimers.set(tabId, t)
+      } else if (state === 'idle') {
+        // SessionEnd clears everything immediately.
+        updateTabMeta(tabId, {
+          agentState: 'idle',
+          agentMessage: undefined,
+          agentModel: undefined,
+        })
+      } else {
+        // in-progress / awaiting — clear any lingering completed state.
+        updateTabMeta(tabId, { agentState: state, agentMessage: message })
+      }
       break
     }
     case 'model_changed': {
@@ -187,6 +231,7 @@ function dispatch({
     case 'closed': {
       // EchoMod fires this — used to GC stale tabMeta entries on tab close.
       cancelDoneLinger(tabId)
+      cancelAgentLinger(tabId)
       clearTabMeta(tabId)
       break
     }

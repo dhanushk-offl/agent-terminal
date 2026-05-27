@@ -54,6 +54,29 @@ function CodexMark({
   )
 }
 
+function OpenCodeMark({
+  size,
+  fill = 'currentColor',
+}: {
+  size: number
+  fill?: string
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={fill}
+      style={{ display: 'block' }}
+      aria-hidden="true"
+    >
+      {/* Simplified terminal/bracket icon representing OpenCode */}
+      <path d="M8 4L2 12L8 20L9.4 18.6L4.8 12L9.4 5.4L8 4Z" />
+      <path d="M16 4L22 12L16 20L14.6 18.6L19.2 12L14.6 5.4L16 4Z" />
+    </svg>
+  )
+}
+
 /* ---------------------------------------------------------------------------
  * Per-agent brand colours — fixed (not theme-aware, they are brand colours)
  * -------------------------------------------------------------------------*/
@@ -61,6 +84,7 @@ function CodexMark({
 const BRAND: Record<string, { color: string; glow: string }> = {
   'claude-code': { color: '#D97757', glow: 'rgba(217,119,87,0.55)' },
   codex: { color: '#e6e8eb', glow: 'rgba(230,232,235,0.45)' },
+  'open-code': { color: '#22d3ee', glow: 'rgba(34,211,238,0.45)' },
 }
 
 /**
@@ -74,6 +98,7 @@ const MARKS: Record<
 > = {
   'claude-code': ClaudeMark,
   codex: CodexMark,
+  'open-code': OpenCodeMark,
 }
 
 function SparkleFallback({
