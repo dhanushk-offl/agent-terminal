@@ -254,31 +254,56 @@ impl AgentTurnMod {
             // Claude/Codex equivalent (e.g. "status.awaiting") are
             // mapped by the plugin before they reach us.
             "open-code" => match event_key.as_str() {
-                // Bridge-mapped names (our opencode-bridge.js maps OpenCode plugin
-                // events to these Claude/Codex equivalents before POSTing).
-                // Also accepts raw OpenCode event types after normalisation:
-                // `session.start` → `sessionstart`, `message.start` → `messagestart`, etc.
+                // ── Session lifecycle ──────────────────────────────────────────
                 "sessionstart" => Some(TurnAction::SessionStart),
+
+                // ── Agent generating ──────────────────────────────────────────
+                // Both the bridge-mapped name (UserPromptSubmit) and the raw
+                // OpenCode names (session.status.busy, messagestart) map here.
+                // After normalize_token strips dots, "session.status" with
+                // status.busy becomes just "sessionstatus" — but we handle
+                // the state separate from the event name, so session.status
+                // events arrive as SessionStatus which may carry busy/idle.
                 "userpromptsubmit" | "messagestart" => Some(TurnAction::InProgress),
-                "pretooluse" | "toolcall" => {
+
+                // ── Tool use ─────────────────────────────────────────────────
+                "pretooluse" | "toolcall" | "commandexecutebefore" | "toolexecutebefore" => {
                     if Self::is_permission_request(payload) {
                         Some(TurnAction::Awaiting)
                     } else {
                         Some(TurnAction::InProgress)
                     }
                 }
+
+                // ── Awaiting user input ──────────────────────────────────────
+                // OpenCode fires permission.updated when the agent needs user
+                // approval. This is the "awaiting" state.
                 "notification"
                 | "permissionrequest"
                 | "permissionrequested"
                 | "permissionasked"
-                | "statusawaiting" => Some(TurnAction::Awaiting),
-                "stop" | "sessionstop" | "messagecomplete" | "messagestop" => {
-                    Some(TurnAction::Completed)
+                | "permissionupdated"   // OpenCode's raw event type
+                | "statusawaiting"     // bridge-mapped from status.awaiting
+                => Some(TurnAction::Awaiting),
+
+                // ── Turn complete ────────────────────────────────────────────
+                // session.idle from OpenCode is the primary "turn complete"
+                // signal. "Stop" (mapped from message.complete/message.stop)
+                // and SessionStop are also valid completion signals.
+                "stop" | "sessionstop" | "messagecomplete" | "messagestop"
+                | "sessionidle"  // OpenCode's session.idle event
+                => Some(TurnAction::Completed),
+
+                // ── Session end ──────────────────────────────────────────────
+                "sessionend" | "sessionended" | "sessiondeleted" => {
+                    Some(TurnAction::SessionEnd)
                 }
-                "sessionend" | "sessionended" => Some(TurnAction::SessionEnd),
-                // `toolresult` and `posttooluse` — tool finished, agent still
-                // generating. Keep as InProgress so the pulsing ring stays on.
-                "posttooluse" | "toolresult" => Some(TurnAction::InProgress),
+
+                // ── Tool finished, agent still generating ──────────────────
+                "posttooluse" | "toolresult" | "toolexecuteafter"
+                | "permissionreplied"  // OpenCode: user approved a permission
+                => Some(TurnAction::InProgress),
+
                 _ => None,
             },
 
