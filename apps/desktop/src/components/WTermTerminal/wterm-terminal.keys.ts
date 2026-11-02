@@ -1,11 +1,9 @@
-// Keyboard helpers for `XTermTerminal`. Split out of the component file so
+// Keyboard helpers for `WTermTerminal`. Split out of the component file so
 // the mount-once effect stays simple and the file lengths stay sane.
 
 /**
  * Returns true when the key combo is claimed by the app's hotkey layer
- * (react-hotkeys-hook at document level). Returning false from xterm's
- * `attachCustomKeyEventHandler` skips xterm's own handler so the event
- * bubbles up to the document.
+ * (react-hotkeys-hook at document level).
  *
  * Order in `handleKeyEvent` is load-bearing: line-edit and agent-newline
  * translations are checked BEFORE this. So by the time we get here,
@@ -20,8 +18,9 @@
  * Terminal, VS Code, Chrome. Safe on Ctrl because Ctrl+Tab has no
  * readline binding (Tab itself is shell-bound but Ctrl+Tab isn't).
  *
- * Browser-level shortcuts (Cmd+C/V copy/paste) are handled above xterm
- * in the contenteditable layer and are unaffected by this filter.
+ * Browser-level shortcuts (Cmd+C/V copy/paste) are handled by the
+ * webview before the terminal sees them and are unaffected by this
+ * filter.
  */
 function isAppShortcut(e: KeyboardEvent): boolean {
   if (e.metaKey) return true
@@ -36,8 +35,8 @@ function isAppShortcut(e: KeyboardEvent): boolean {
  *
  * Returns the bytes to write to the PTY, or `null` if the event isn't
  * a translatable chord. The caller writes the bytes via `onData` and
- * suppresses xterm.js's default — its "modified arrow" CSI sequence
- * (`\x1b[1;3D` and friends) reaches readline as gibberish.
+ * suppresses the terminal's own default, whose "modified arrow" CSI
+ * sequence (`\x1b[1;3D` and friends) reaches readline as gibberish.
  *
  * Byte mappings (keyed by `<modifier>:<key>`):
  *   alt:ArrowLeft   `\x1bb` = ESC + 'b' = Meta-B = `backward-word`
@@ -105,33 +104,99 @@ function matchTranslation(e: KeyboardEvent, isAgent: boolean): string | null {
 }
 
 /**
- * Single dispatch point for `attachCustomKeyEventHandler`. Returns
- * `true` to let xterm process the event normally, `false` to suppress
- * it (either because we wrote translated bytes ourselves or because
- * the event is an app shortcut that should bubble to react-hotkeys).
+ * What the host should do with a key event.
  *
- * Order matters — translations win over app-shortcut bubbling because
+ * `terminal` lets wterm handle it. The other two both mean wterm must
+ * not see it, and they are distinguished because they diverge after
+ * that: a translation is finished business, while an app shortcut still
+ * has to reach the document so react-hotkeys-hook can run it.
+ */
+export type KeyVerdict = 'terminal' | 'translated' | 'app-shortcut'
+
+/**
+ * Single dispatch point for the host's capture-phase keydown listener.
+ *
+ * Order matters. Translations win over app-shortcut bubbling because
  * some translations (Cmd+arrow) would otherwise be eaten by
  * `isAppShortcut` returning true for any meta-key combo.
  *
- * Important: xterm's `attachCustomKeyEventHandler` fires for `keydown`,
- * `keypress`, AND `keyup` (three call sites in `CoreBrowserTerminal`).
- * The match check runs on every flavor so xterm's default stays
- * suppressed across the whole event lifecycle (otherwise xterm would
- * still emit the original byte from its keypress handler, leaking
- * through our translation). The side-effecting write only fires on
- * keydown, so each physical keypress sends the translated bytes
- * exactly once.
+ * The side-effecting write fires only on keydown, so one physical
+ * keypress sends the translated bytes exactly once, while the verdict
+ * itself is returned for every event flavour so the caller can keep
+ * suppressing wterm across the whole keydown/keyup lifecycle.
  */
-export function handleKeyEvent(
+export function classifyKeyEvent(
   e: KeyboardEvent,
   opts: HandleKeyEventOpts,
-): boolean {
+): KeyVerdict {
   const translation = matchTranslation(e, opts.isAgent)
   if (translation !== null) {
     if (e.type === 'keydown') opts.onData(translation)
-    return false
+    return 'translated'
   }
-  if (isAppShortcut(e)) return false
-  return true
+  if (isAppShortcut(e)) return 'app-shortcut'
+  return 'terminal'
+}
+
+/** Marks the copy of an app shortcut this module re-emits on document. */
+const FORWARDED = '__wtermForwarded'
+
+/**
+ * Installs the capture-phase keyboard listener the terminal host needs,
+ * and returns the function that removes it.
+ *
+ * `opts` is read on every event rather than captured, so the host can
+ * mount this once and still have the latest props reach it.
+ */
+export function installKeyCapture(
+  host: HTMLElement,
+  opts: () => HandleKeyEventOpts,
+): () => void {
+  function onCapture(e: KeyboardEvent) {
+    if (FORWARDED in e) return
+    const verdict = classifyKeyEvent(e, opts())
+    if (verdict === 'terminal') return
+
+    // wterm's own listener sits on the textarea, below this one, and has
+    // no defaultPrevented check, so the only way to keep a key away from
+    // it is to stop the event here.
+    e.stopImmediatePropagation()
+
+    // Stopping it also means wterm never gets to cancel the browser
+    // default, and the default for Enter in its focused textarea is to
+    // insert a newline. wterm's `input` listener then forwards that
+    // newline as if it had been typed, so a translated Shift+Enter
+    // reaches the agent twice. Only translations are cancelled here: app
+    // shortcuts include Cmd+C and Cmd+V, whose defaults are the
+    // webview's own clipboard handling.
+    if (verdict === 'translated') e.preventDefault()
+
+    // Stopping it also keeps it from reaching react-hotkeys-hook, which
+    // binds on the document in the bubble phase, so an app shortcut is
+    // re-emitted there as a fresh event. The marker stops that copy from
+    // re-entering this handler.
+    if (verdict === 'app-shortcut') {
+      const forwarded = new KeyboardEvent(e.type, {
+        key: e.key,
+        code: e.code,
+        location: e.location,
+        repeat: e.repeat,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        bubbles: true,
+        cancelable: true,
+      })
+      Object.defineProperty(forwarded, FORWARDED, { value: true })
+      document.dispatchEvent(forwarded)
+    }
+  }
+
+  host.addEventListener('keydown', onCapture, { capture: true })
+  host.addEventListener('keyup', onCapture, { capture: true })
+  return () => {
+    host.removeEventListener('keydown', onCapture, { capture: true })
+    host.removeEventListener('keyup', onCapture, { capture: true })
+  }
 }
