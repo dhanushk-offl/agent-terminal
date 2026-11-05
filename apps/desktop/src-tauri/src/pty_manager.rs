@@ -480,9 +480,37 @@ fn build_shell_command(
             cmd.arg("--init-file");
             cmd.arg(&init);
         }
+    } else if shell_name == "fish" {
+        if let Some(init) = dirs::home_dir()
+            .map(|h| h.join(".config").join(crate::identity::NAMESPACE).join("fish-integration.fish"))
+        {
+            cmd.env("AGENT_TERMINAL_FISH_INTEGRATION", init);
+            cmd.arg("--init-command");
+            cmd.arg("source $AGENT_TERMINAL_FISH_INTEGRATION");
+        }
     }
 
     cmd
+}
+
+/// Linux GUI launch environments can inherit a stale SHELL from a parent.
+/// Prefer the login shell registered for the current account, then SHELL.
+fn default_shell() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let account_shell = std::process::Command::new("id").arg("-u").output().ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|uid| std::process::Command::new("getent").args(["passwd", uid.trim()]).output().ok())
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|entry| entry.trim().rsplit(':').next().map(str::to_owned))
+            .filter(|path| path.starts_with('/') && std::path::Path::new(path).is_file());
+        if let Some(shell) = account_shell { return shell; }
+    }
+    std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" }.to_string()
+    })
 }
 
 // Long signature is the trade-off for keeping spawn_pty callable from both
@@ -513,9 +541,7 @@ pub fn spawn_pty(
         .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
 
-    let shell_path = shell.unwrap_or_else(|| {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
-    });
+    let shell_path = shell.filter(|s| !s.is_empty()).unwrap_or_else(default_shell);
 
     let cmd = build_shell_command(&shell_path, cwd.as_deref(), &tab_id);
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

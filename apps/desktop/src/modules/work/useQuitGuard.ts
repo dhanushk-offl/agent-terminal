@@ -1,11 +1,11 @@
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { exit } from '@tauri-apps/plugin-process'
 import { useEffect } from 'react'
 import { $projects } from '@/modules/stores/$projects'
 import { $tabMeta } from '@/modules/stores/$tabMeta'
 import { requestInterrupt } from '@/modules/work/$interrupt'
 import { collectActiveWork } from '@/modules/work/active-work'
+import { quitApp } from '@/modules/work/quit-app'
 
 /** Emitted by the Rust side for a quit it has held back. */
 const QUIT_REQUESTED = 'app://quit-requested'
@@ -46,7 +46,7 @@ export function useQuitGuard(): void {
 
     void listen(QUIT_REQUESTED, () => {
       if (!hasActiveWork()) {
-        void exit(0)
+        void quitApp().catch(() => requestInterrupt({ kind: 'quit' }))
         return
       }
       requestInterrupt({ kind: 'quit' })

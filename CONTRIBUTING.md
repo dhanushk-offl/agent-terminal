@@ -26,7 +26,31 @@ Thank you for your interest in contributing. Agent Terminal is in early active d
 | Bun | latest | `curl -fsSL https://bun.sh/install \| bash` |
 | Xcode CLT | latest | `xcode-select --install` |
 
-> **Note:** Windows support is on the roadmap but is not available yet. Development currently requires macOS.
+> **Note:** Windows support is on the roadmap but is not available yet. Linux desktop support is experimental.
+
+### Linux development and packages
+
+Install Rust, Bun and the Tauri 2 Linux prerequisites for your distribution,
+including WebKitGTK 4.1, GTK 3, OpenSSL, librsvg and a C toolchain. Install
+`fish` to exercise fish integration and `lsof` for listening-port detection.
+Run `bun install --frozen-lockfile` and `bun run tauri:dev` from the repository
+root. Linux desktop notifications require a running notification service.
+
+To build an x86-64 AppImage, Debian package and RPM from the repository root:
+
+```sh
+bun install --frozen-lockfile
+bun build apps/desktop/src-tauri/sidecar/index.js --compile --outfile apps/desktop/src-tauri/sidecar/sidecar-bin
+cd apps/desktop
+bunx tauri build --config src-tauri/tauri.linux-bundle.conf.json
+```
+
+Artifacts are written under `apps/desktop/target/release/bundle/`. The
+AppImage requires a compatible Linux desktop and FUSE; where FUSE is not
+available, run it with `--appimage-extract` and launch the extracted `AppRun`.
+The Linux bundle includes a standalone terminal sidecar; Linux packages are
+experimental and are not yet part of the signed updater manifest. Notification
+click routing is not available in the Linux notification backend.
 
 ---
 

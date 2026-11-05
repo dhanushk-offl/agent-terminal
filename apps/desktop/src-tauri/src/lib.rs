@@ -89,10 +89,8 @@ use stream_hub::StreamHub;
 use tokio::process::Command;
 use wss_server::{PairedConnMap, ServerState};
 
-/// Locate the runtime binary + sidecar entry script. Dev launches read from
-/// the source tree via CARGO_MANIFEST_DIR; production bundling is a separate
-/// follow-up (Tauri externalBin + a bundled Node binary). Returns None when
-/// either piece is missing so startup degrades to "no sidecar" gracefully.
+/// Locate a runtime and source-tree script for development launches. Linux
+/// bundles instead ship a standalone sidecar selected by `try_spawn_sidecar`.
 fn resolve_sidecar_paths() -> Option<(PathBuf, PathBuf)> {
     // Prefer node; fall back to bun (compatible enough for the JSON-RPC loop
     // + @xterm/headless). Whichever is present on PATH wins.
@@ -111,26 +109,26 @@ fn resolve_sidecar_paths() -> Option<(PathBuf, PathBuf)> {
 /// runtime, missing script, spawn error). The desktop continues running
 /// without it; the sidecar is only consumed by the upcoming StreamHub +
 /// WSS server modules.
-async fn try_spawn_sidecar() -> Option<SidecarClient> {
-    let (runtime, script) = match resolve_sidecar_paths() {
-        Some(p) => p,
-        None => {
+async fn try_spawn_sidecar(app: &tauri::AppHandle) -> Option<SidecarClient> {
+    use tauri::path::BaseDirectory;
+    let bundled = app.path().resolve("sidecar-bin", BaseDirectory::Resource).ok()
+        .filter(|p| p.is_file());
+    let cmd = if let Some(binary) = bundled {
+        Command::new(binary)
+    } else if let Some((runtime, script)) = resolve_sidecar_paths() {
+        let mut command = Command::new(runtime);
+        command.arg(script);
+        command
+    } else {
             eprintln!(
                 "[sidecar] disabled: node/bun not on PATH or sidecar/index.js missing — \
                  remote-attach features will be unavailable until the sidecar is bundled"
             );
             return None;
-        }
     };
-    let mut cmd = Command::new(&runtime);
-    cmd.arg(&script);
     match SidecarClient::spawn(cmd).await {
         Ok(c) => {
-            eprintln!(
-                "[sidecar] spawned via {} {}",
-                runtime.display(),
-                script.display()
-            );
+            eprintln!("[sidecar] spawned");
             Some(c)
         }
         Err(e) => {
@@ -296,7 +294,7 @@ pub fn run() {
             // desktop from launching. The StreamHub built below uses
             // Option<Arc<SidecarClient>> so it degrades to local-only fan-
             // out when the sidecar isn't available.
-            let sidecar = tauri::async_runtime::block_on(try_spawn_sidecar()).map(Arc::new);
+            let sidecar = tauri::async_runtime::block_on(try_spawn_sidecar(app.handle())).map(Arc::new);
             if let Some(client) = sidecar.clone() {
                 app.manage(client);
             }
@@ -587,6 +585,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::close_tab,
+            commands::quit_app,
             commands::list_projects,
             commands::save_projects,
             commands::sync_projects_to_wss,

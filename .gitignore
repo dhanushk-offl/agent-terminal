@@ -51,3 +51,4 @@ keystore.properties
 .env
 .env.*
 !.env.example
+apps/desktop/src-tauri/sidecar/sidecar-bin
