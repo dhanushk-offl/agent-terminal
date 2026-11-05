@@ -2,6 +2,14 @@ name: Linux packages
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/linux-desktop-support
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - 'bun.lock'
+      - '.github/workflows/linux-build.yml'
   pull_request:
     paths:
       - 'apps/desktop/**'
