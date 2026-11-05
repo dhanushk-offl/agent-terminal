@@ -30,6 +30,56 @@ Thank you for your interest in contributing. Agent Terminal is in early active d
 
 ### Linux development and packages
 
+Linux sessions preserve the launcher PATH and append existing user-tool
+directories so desktop launches can find tools installed outside `/usr/bin`.
+Shell startup files still control version-manager and executable precedence.
+The fallback recognizes Bun and npm prefixes, `PNPM_HOME`, and conventional
+user bin directories. It never installs or downloads a tool.
+
+For an installation in a custom directory, create
+`${XDG_CONFIG_HOME:-$HOME/.config}/agent-terminal/environment.json`:
+
+```json
+{
+  "extraPaths": ["~/tools/bin", "/opt/my-tools/bin"]
+}
+```
+
+Entries must be absolute or start with `~/`; existing directories are appended
+after inherited PATH entries, before automatic fallbacks. Invalid configuration
+is reported to stderr and does not prevent shell startup. Development instances
+use the `agent-terminal-dev` namespace. Reopen a session after changing this file.
+
+If a command is missing, compare `command -v codex`, `command -v node`, and
+`type -a codex` in the affected shell and your usual terminal. A custom npm
+prefix in `~/.npmrc` is supported without running npm. Version managers such as
+NVM, fnm, and asdf must initialize through your normal shell configuration;
+Agent Terminal does not guess which installed runtime version you want.
+`codex: command not found` indicates PATH discovery, while an interpreter
+error from `/usr/bin/env node` indicates Node is missing from the shell PATH.
+Errors referencing libraries under `/tmp/.mount_*` indicate an outdated
+AppImage or a shell startup file reintroducing bundle paths. The app cleans
+AppImage library and Python overrides for host processes, while keeping its
+own GUI environment intact. macOS and Windows do not use the Linux PATH fallback.
+
+The isolated environment tests use temporary home directories and fixture
+executables rather than your personal configuration:
+
+```sh
+cargo test --locked --manifest-path apps/desktop/shell-env-tests/Cargo.toml
+cargo build --locked --manifest-path apps/desktop/shell-env-tests/Cargo.toml
+python3 -E apps/desktop/shell-env-tests/test_pty.py --probe apps/desktop/shell-env-tests/target/debug/agent-terminal-shell-env-tests
+```
+
+The PTY suite requires bash, fish, zsh and Node. It is run on Ubuntu 22.04/24.04,
+Debian 12/13, Fedora's stable container and Arch. Those jobs validate shell
+behavior; they do not certify graphical compatibility under every compositor.
+After the build, separate jobs start the AppImage under Xvfb on each target
+distribution and under headless Weston on Ubuntu. Debian and RPM jobs also
+install and start their native package. These checks catch loader/startup
+failures; visual correctness and real-agent interaction still need desktop
+smoke testing before expanding the supported-platform claims.
+
 Install Rust, Bun and the Tauri 2 Linux prerequisites for your distribution,
 including WebKitGTK 4.1, GTK 3, OpenSSL, librsvg and a C toolchain. Install
 `fish` to exercise fish integration and `lsof` for listening-port detection.

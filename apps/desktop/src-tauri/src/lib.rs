@@ -26,6 +26,8 @@ mod shell_integration;
 // without going through the full Tauri startup path.
 pub mod sidecar_client;
 mod host_env;
+#[cfg(target_os = "linux")]
+mod linux_path;
 // pub for the same reason — tests construct StreamHub directly.
 pub mod stream_hub;
 // pub so the WSS server (next sub-step) and future integration tests can

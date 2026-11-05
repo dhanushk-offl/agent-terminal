@@ -432,6 +432,14 @@ fn build_shell_command(
             None => cmd.env_remove(key),
         }
     }
+    #[cfg(target_os = "linux")]
+    if let Some(home) = dirs::home_dir() {
+        if let Some(path) = crate::linux_path::shell_path(
+            &home, crate::identity::NAMESPACE, cmd.get_env("PATH"),
+        ) {
+            cmd.env("PATH", path);
+        }
+    }
     cmd.env("AGENT_TERMINAL_TAB_ID", tab_id);
     // Plugin-based agents (opencode) report over HTTP from their own runtime,
     // so they need the hook port at runtime. The shell hook scripts hardcode it
@@ -517,6 +525,22 @@ fn default_shell() -> String {
     std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| {
         if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" }.to_string()
     })
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_environment_tests {
+    use super::build_shell_command;
+
+    #[test]
+    fn macos_keeps_inherited_path_and_shell_arguments() {
+        let path = std::env::var_os("PATH");
+        let zsh = build_shell_command("/bin/zsh", None, "regression-test");
+        assert_eq!(zsh.get_env("PATH"), path.as_deref());
+        assert_eq!(zsh.get_argv().last().and_then(|v| v.to_str()), Some("-l"));
+        let bash = build_shell_command("/bin/bash", None, "regression-test");
+        assert_eq!(bash.get_env("PATH"), path.as_deref());
+        assert!(bash.get_argv().iter().any(|v| v == "--init-file"));
+    }
 }
 
 // Long signature is the trade-off for keeping spawn_pty callable from both

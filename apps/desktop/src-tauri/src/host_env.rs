@@ -28,6 +28,8 @@ fn clean(env: Vec<(OsString, OsString)>) -> Vec<(OsString, Option<OsString>)> {
             key.to_str(),
             Some(
                 "PATH"
+                    | "PYTHONHOME"
+                    | "PYTHONPATH"
                     | "LD_LIBRARY_PATH"
                     | "GTK_PATH"
                     | "GTK_EXE_PREFIX"
@@ -105,6 +107,11 @@ mod tests {
                 "/tmp/.mount_agent-test/exec.so /opt/host/preload.so",
             ),
             ("PATH", "/tmp/.mount_agent-test/usr/bin:/usr/bin:/bin"),
+            ("PYTHONHOME", "/tmp/.mount_agent-test/usr"),
+            (
+                "PYTHONPATH",
+                "/tmp/.mount_agent-test/usr/share/pyshared:/opt/host/python",
+            ),
             (
                 "GIO_MODULE_DIR",
                 "/tmp/.mount_agent-test/usr/lib/gio/modules",
@@ -124,6 +131,11 @@ mod tests {
         assert_eq!(result[OsStr::new("PATH")], Some("/usr/bin:/bin".into()));
         assert_eq!(result[OsStr::new("GIO_MODULE_DIR")], None);
         assert_eq!(result[OsStr::new("APPDIR")], None);
+        assert_eq!(result[OsStr::new("PYTHONHOME")], None);
+        assert_eq!(
+            result[OsStr::new("PYTHONPATH")],
+            Some("/opt/host/python".into())
+        );
     }
 
     #[test]
