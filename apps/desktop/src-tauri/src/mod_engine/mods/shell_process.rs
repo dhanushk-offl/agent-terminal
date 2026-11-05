@@ -405,7 +405,7 @@ fn is_interactive_shell(command: &str) -> bool {
 async fn find_children_of_shell(shell_pid: u32) -> Vec<u32> {
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
+        tokio::process::Command::from(crate::host_env::command("ps"))
             .args(["-ax", "-o", "pid=,ppid=,comm="])
             .output(),
     )
@@ -463,7 +463,7 @@ async fn find_descendants(pids: &[u32]) -> Vec<(u32, u32)> {
     }
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
+        tokio::process::Command::from(crate::host_env::command("ps"))
             .args(["-ax", "-o", "pid=,ppid="])
             .output(),
     )
@@ -533,7 +533,7 @@ async fn get_process_args(pids: &[u32]) -> HashMap<u32, String> {
     let pid_list = pids.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(2),
-        tokio::process::Command::new("ps")
+        tokio::process::Command::from(crate::host_env::command("ps"))
             .args(["-p", &pid_list, "-o", "pid=,args="])
             .output(),
     )
@@ -661,7 +661,7 @@ async fn find_listening_ports_per_pid(
 
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(3),
-        tokio::process::Command::new("lsof")
+        tokio::process::Command::from(crate::host_env::command("lsof"))
             .args(["-nP", "-a", "-p", &pid_arg, "-iTCP", "-sTCP:LISTEN", "-Fpn"])
             .output(),
     )

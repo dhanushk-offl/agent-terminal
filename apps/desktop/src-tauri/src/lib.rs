@@ -25,6 +25,7 @@ mod shell_integration;
 // pub so integration tests can drive a SidecarClient instance directly
 // without going through the full Tauri startup path.
 pub mod sidecar_client;
+mod host_env;
 // pub for the same reason — tests construct StreamHub directly.
 pub mod stream_hub;
 // pub so the WSS server (next sub-step) and future integration tests can
@@ -116,7 +117,7 @@ async fn try_spawn_sidecar(app: &tauri::AppHandle) -> Option<SidecarClient> {
     let cmd = if let Some(binary) = bundled {
         Command::new(binary)
     } else if let Some((runtime, script)) = resolve_sidecar_paths() {
-        let mut command = Command::new(runtime);
+        let mut command = Command::from(crate::host_env::command(runtime));
         command.arg(script);
         command
     } else {

@@ -426,6 +426,12 @@ fn build_shell_command(
     tab_id: &str,
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(shell_path);
+    for (key, value) in crate::host_env::overrides() {
+        match value {
+            Some(value) => cmd.env(key, value),
+            None => cmd.env_remove(key),
+        }
+    }
     cmd.env("AGENT_TERMINAL_TAB_ID", tab_id);
     // Plugin-based agents (opencode) report over HTTP from their own runtime,
     // so they need the hook port at runtime. The shell hook scripts hardcode it
@@ -498,10 +504,10 @@ fn build_shell_command(
 fn default_shell() -> String {
     #[cfg(target_os = "linux")]
     {
-        let account_shell = std::process::Command::new("id").arg("-u").output().ok()
+        let account_shell = crate::host_env::command("id").arg("-u").output().ok()
             .filter(|output| output.status.success())
             .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|uid| std::process::Command::new("getent").args(["passwd", uid.trim()]).output().ok())
+            .and_then(|uid| crate::host_env::command("getent").args(["passwd", uid.trim()]).output().ok())
             .filter(|output| output.status.success())
             .and_then(|output| String::from_utf8(output.stdout).ok())
             .and_then(|entry| entry.trim().rsplit(':').next().map(str::to_owned))
