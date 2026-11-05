@@ -164,13 +164,13 @@ jobs:
           case "$DISTRO_FAMILY" in
             debian)
               apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates git python3 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3 xvfb xauth dbus weston
+              DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates git python3 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xdotool openbox xvfb xauth dbus weston
               ;;
             fedora)
-              dnf install -y ca-certificates git python3 webkit2gtk4.1 libayatana-appindicator-gtk3 libxdo xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon weston
+              dnf install -y ca-certificates git python3 webkit2gtk4.1 libayatana-appindicator-gtk3 xdotool openbox xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon weston
               ;;
             arch)
-              pacman -Syu --noconfirm ca-certificates git python webkit2gtk-4.1 libayatana-appindicator xdotool xorg-server-xvfb xorg-xauth dbus weston
+              pacman -Syu --noconfirm ca-certificates git python webkit2gtk-4.1 libayatana-appindicator xdotool openbox xorg-server-xvfb xorg-xauth dbus weston
               ;;
           esac
       - uses: actions/checkout@v4

@@ -196,9 +196,17 @@ pub fn run() {
         // re-focuses the window.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+                if let Err(error) = window.show() {
+                    eprintln!("[single-instance] failed to show main window: {error}");
+                }
+                if let Err(error) = window.unminimize() {
+                    eprintln!("[single-instance] failed to unminimize main window: {error}");
+                }
+                if let Err(error) = window.set_focus() {
+                    eprintln!("[single-instance] failed to focus main window: {error}");
+                }
+            } else {
+                eprintln!("[single-instance] cannot activate: main window is missing");
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -627,8 +635,10 @@ pub fn run() {
             // all, which is worse than skipping a confirmation. The window
             // is short so that cancelling the dialog and quitting again
             // later still asks.
+            #[cfg(target_os = "macos")]
             const FORCE_QUIT_WINDOW: std::time::Duration =
                 std::time::Duration::from_secs(2);
+            #[cfg(target_os = "macos")]
             let last_quit_request: std::sync::Mutex<Option<std::time::Instant>> =
                 std::sync::Mutex::new(None);
 
@@ -637,6 +647,7 @@ pub fn run() {
                 // already been confirmed. Only an unprompted quit is held
                 // back, which is also what keeps this from looping against
                 // our own exit() call.
+                #[cfg(target_os = "macos")]
                 tauri::RunEvent::ExitRequested { code, api, .. } if code.is_none() => {
                     let now = std::time::Instant::now();
                     let mut last = match last_quit_request.lock() {
