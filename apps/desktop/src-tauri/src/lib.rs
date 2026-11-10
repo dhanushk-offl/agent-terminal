@@ -18,6 +18,7 @@ mod mod_engine;
 #[doc(hidden)]
 pub use mod_engine::{CwdTable, ModEngineHandle};
 mod notifications;
+pub mod push;
 // pub so integration tests can construct a bare PtyMap without a full
 // PtyHandle harness (tests only need the map's shape for ServerState).
 pub mod pty_manager;
@@ -405,6 +406,16 @@ pub fn run() {
                         let pairing_window = Arc::new(PairingWindow::new());
                         let paired_conns = Arc::new(PairedConnMap::new());
 
+                        // Phone escalation. Lives here rather than beside
+                        // NotificationService because it needs the paired
+                        // token store, which only exists once the WSS
+                        // server has somewhere to run. The notification
+                        // service holds it behind an Option for exactly
+                        // that reason.
+                        let push_service =
+                            push::PushService::new(paired_tokens.clone());
+                        notification_service.attach_push(push_service.clone());
+
                         // Port trio bind fallback. `bind_addr` from the
                         // dev config carries the host to bind on
                         // (typically `0.0.0.0`); we ignore its port and
@@ -526,6 +537,7 @@ pub fn run() {
                             paired_tokens,
                             pairing_window,
                             paired_conns,
+                            push: Some(push_service),
                         });
                         app.manage(auth);
                         let rustls_cfg = match tls_bundle {
@@ -558,7 +570,7 @@ pub fn run() {
               }
             } // 'wss_setup
 
-            // Jarvis owns collection independently of terminal tabs and renderers.
+            // Usage collection runs independently of terminal tabs and renderers.
             let usage_service = usage::UsageService::new(app.handle().clone());
             app.manage(usage_service.clone());
             usage_service.start();
@@ -603,11 +615,11 @@ pub fn run() {
             notifications::notif_set_app_focus,
             notifications::notif_set_enabled,
             notifications::notif_cancel,
-            usage::jarvis_snapshot,
-            usage::jarvis_refresh,
-            usage::jarvis_rescan_agents,
-            usage::jarvis_set_preferences,
-            usage::jarvis_authorize_claude_keychain,
+            usage::usage_snapshot,
+            usage::usage_refresh,
+            usage::usage_rescan_agents,
+            usage::usage_set_preferences,
+            usage::usage_authorize_claude_keychain,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

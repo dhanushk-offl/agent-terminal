@@ -1,5 +1,8 @@
 <script lang="ts">
 import { ArrowUpRight, BookOpen, Check, Copy } from 'phosphor-svelte'
+import { onMount } from 'svelte'
+import { siApple, siIntel } from 'simple-icons'
+let activeSection = $state('overview')
 
 let copied = $state(false)
 const command = 'brew install --cask daniakash/tap/agent-terminal'
@@ -14,12 +17,33 @@ const sections = [
   { label: 'Projects & tabs', id: 'projects' },
   { label: 'Agent integrations', id: 'agents' },
   { label: 'Status bar', id: 'status-bar' },
-  { label: 'Jarvis usage', id: 'jarvis' },
+  { label: 'Agent Usage limits', id: 'agent-usage' },
   { label: 'Mobile companion', id: 'mobile' },
   { label: 'Keyboard shortcuts', id: 'shortcuts' },
   { label: 'Platforms', id: 'platforms' },
   { label: 'Contributing', id: 'contributing' },
 ]
+onMount(() => {
+  const updateActiveSection = () => {
+    const atBottom =
+      window.scrollY + window.innerHeight >=
+      document.documentElement.scrollHeight - 2
+    let current = sections[0].id
+    for (const section of sections) {
+      const element = document.getElementById(section.id)
+      if (element && element.getBoundingClientRect().top <= 110)
+        current = section.id
+    }
+    activeSection = atBottom ? sections[sections.length - 1].id : current
+  }
+  updateActiveSection()
+  window.addEventListener('scroll', updateActiveSection, { passive: true })
+  window.addEventListener('resize', updateActiveSection)
+  return () => {
+    window.removeEventListener('scroll', updateActiveSection)
+    window.removeEventListener('resize', updateActiveSection)
+  }
+})
 </script>
 <main class="docs-page">
   <div class="docs-shell">
@@ -27,7 +51,11 @@ const sections = [
       <div class="docs-sidebar-title"><BookOpen size={16} /> DOCUMENTATION</div>
       <nav aria-label="Documentation sections">
         {#each sections as section}
-          <a href={`#${section.id}`}>{section.label}</a>
+          <a
+            href={`#${section.id}`}
+            aria-current={activeSection === section.id ? 'location' : undefined}
+            >{section.label}</a
+          >
         {/each}
       </nav>
       <a
@@ -67,10 +95,16 @@ const sections = [
         <div class="docs-downloads">
           <a
             href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-aarch64.dmg"
-            >Apple Silicon <ArrowUpRight size={14} /></a
+            ><span class="simple-icon" aria-hidden="true"
+              >{@html siApple.svg}</span
+            >
+            Apple Silicon <ArrowUpRight size={14} /></a
           ><a
             href="https://github.com/DaniAkash/agent-terminal/releases/latest/download/agent-terminal-x64.dmg"
-            >Intel <ArrowUpRight size={14} /></a
+            ><span class="simple-icon" aria-hidden="true"
+              >{@html siIntel.svg}</span
+            >
+            Intel <ArrowUpRight size={14} /></a
           >
         </div>
         <div class="docs-code">
@@ -131,8 +165,9 @@ const sections = [
         <div class="docs-callout">
           <strong>Find a recent session</strong>
           <p>
-            Press <kbd>⌘</kbd> <kbd>P</kbd> to open the recent-tabs switcher.
-            Type to filter and press Enter to jump back in.
+            Press <kbd class="command-key">⌘</kbd> <kbd>P</kbd> to open the
+            recent-tabs switcher. Type to filter and press Enter to jump back
+            in.
           </p>
         </div>
       </section>
@@ -166,9 +201,9 @@ const sections = [
           Amp uses terminal-title signals.
         </p>
         <p>
-          Agent support is independent of provider usage in Jarvis. An installed
-          CLI may still need its own sign-in, and experimental integrations may
-          need further testing.
+          Agent support is independent of provider usage in Agent Usage limits.
+          An installed CLI may still need its own sign-in, and experimental
+          integrations may need further testing.
         </p>
         <a class="docs-link" href="/agents"
           >See all agent integrations <ArrowUpRight size={14} /></a
@@ -192,27 +227,28 @@ const sections = [
           system appearance for the workspace and terminal.
         </p>
       </section>
-      <section class="docs-section" id="jarvis">
+      <section class="docs-section" id="agent-usage">
         <span class="docs-kicker">05 / PROVIDER USAGE</span>
-        <h2>Jarvis</h2>
+        <h2>Agent Usage limits</h2>
         <p>
-          Jarvis shows provider usage and reset windows. Open
-          <strong>Jarvis</strong>
+          Agent Usage limits shows provider usage and reset windows. Open
+          <strong>Agent Usage limits</strong>
           from the status bar, choose
           <strong>Settings</strong>, enable it, and select the providers you
           want to track. Sources remain off until selected.
         </p>
         <p>
-          Hover or focus the Jarvis button for compact gauges, or open it for
-          details. Usage access depends on the enabled provider and an existing
-          local session or key. Unavailable data is shown as unavailable.
+          Hover or focus the Agent Usage limits button for compact gauges, or
+          open it for details. Usage access depends on the enabled provider and
+          an existing local session or key. Unavailable data is shown as
+          unavailable.
         </p>
         <div class="docs-callout">
           <strong>Provider access stays opt-in</strong>
           <p>
-            Credentials are read for enabled providers; Jarvis does not save
-            them or send them to the frontend. It reports provider quotas, not
-            estimated model spending.
+            Credentials are read for enabled providers; Agent Usage limits does
+            not save them or send them to the frontend. It reports provider
+            quotas, not estimated model spending.
           </p>
         </div>
         <h3>Reading the gauges</h3>
@@ -225,25 +261,25 @@ const sections = [
         </p>
         <h3>Refresh and troubleshooting</h3>
         <p>
-          Jarvis refreshes every five minutes by default; manual, one-minute,
-          and fifteen-minute modes are also available. Use
+          Agent Usage limits refreshes every five minutes by default; manual,
+          one-minute, and fifteen-minute modes are also available. Use
           <strong>Refresh</strong>
           after changing credentials. If a provider session has expired, renew
           it in that provider’s CLI. Claude Code may require explicitly
           authorizing Keychain access from its usage card.
         </p>
         <p>
-          Jarvis detects installed executables at startup and periodically
-          thereafter. Use <strong>Rescan</strong> in Settings to check
-          immediately. If an executable is not found, make sure its install
-          location is available to the desktop process’s PATH.
+          Agent Usage limits detects installed executables at startup and
+          periodically thereafter. Use <strong>Rescan</strong> in Settings to
+          check immediately. If an executable is not found, make sure its
+          install location is available to the desktop process’s PATH.
         </p>
         <a
           class="docs-link"
-          href="https://github.com/DaniAkash/agent-terminal/blob/main/docs/jarvis.md"
+          href="https://github.com/DaniAkash/agent-terminal/blob/main/docs/agent-usage.md"
           target="_blank"
           rel="noreferrer"
-          >Read the full Jarvis guide <ArrowUpRight size={14} /></a
+          >Read the full Agent Usage limits guide <ArrowUpRight size={14} /></a
         >
       </section>
       <section class="docs-section" id="mobile">
@@ -296,27 +332,39 @@ const sections = [
             <tbody>
               <tr>
                 <td>New tab in the active project</td>
-                <td><kbd>Ctrl</kbd> + <kbd>T</kbd></td>
+                <td><kbd class="command-key">⌘</kbd> + <kbd>T</kbd></td>
               </tr>
               <tr>
-                <td>Close the active tab</td>
-                <td><kbd>Ctrl</kbd> + <kbd>W</kbd></td>
+                <td>Close the active tab (unpinned)</td>
+                <td><kbd class="command-key">⌘</kbd> + <kbd>W</kbd></td>
               </tr>
               <tr>
-                <td>Cycle tabs</td>
+                <td>Next tab</td>
                 <td>
-                  <kbd>Ctrl</kbd>
-                  + <kbd>Tab</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> +
+                  <kbd class="command-key">⌘</kbd>
+                  + <kbd>Shift</kbd> + <kbd>]</kbd> or <kbd>Ctrl</kbd> +
                   <kbd>Tab</kbd>
                 </td>
               </tr>
               <tr>
+                <td>Previous tab</td>
+                <td>
+                  <kbd class="command-key">⌘</kbd>
+                  + <kbd>Shift</kbd> + <kbd>[</kbd> or <kbd>Ctrl</kbd> +
+                  <kbd>Shift</kbd>
+                  + <kbd>Tab</kbd>
+                </td>
+              </tr>
+              <tr>
                 <td>Jump to project 1–9</td>
-                <td><kbd>Ctrl</kbd> + <kbd>1</kbd> … <kbd>9</kbd></td>
+                <td>
+                  <kbd class="command-key">⌘</kbd>
+                  + <kbd>1</kbd> … <kbd>9</kbd>
+                </td>
               </tr>
               <tr>
                 <td>Open recent-tabs switcher</td>
-                <td><kbd>⌘</kbd> + <kbd>P</kbd></td>
+                <td><kbd class="command-key">⌘</kbd> + <kbd>P</kbd></td>
               </tr>
             </tbody>
           </table>
