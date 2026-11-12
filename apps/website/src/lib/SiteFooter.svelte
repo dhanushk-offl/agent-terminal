@@ -37,6 +37,7 @@ import { siGithub, siX } from 'simple-icons'
     <div class="footer-links">
       <div>
         <span>PRODUCT</span><a href="/#features">Features</a
+        ><a href="/downloads">Downloads</a
         ><a href="https://github.com/DaniAkash/agent-terminal/releases"
           >Releases</a
         ><a href="/changelog">Changelog</a><a href="/docs">Documentation</a>
@@ -64,5 +65,6 @@ import { siGithub, siX } from 'simple-icons'
   </div>
   <div class="wrap footer-bottom">
     <span>© 2026 AGENT TERMINAL CONTRIBUTORS · OPEN SOURCE UNDER MIT</span>
+    <a class="footer-legal" href="/privacy">PRIVACY POLICY</a>
   </div>
 </footer>
